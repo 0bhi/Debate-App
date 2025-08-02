@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE "DebateTurn" ALTER COLUMN "tokensIn" DROP NOT NULL,
+ALTER COLUMN "tokensOut" DROP NOT NULL,
+ALTER COLUMN "durationMs" DROP NOT NULL;

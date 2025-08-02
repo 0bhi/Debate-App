@@ -157,13 +157,13 @@ export const useDebateStore = create<DebateStore>()(
           break;
 
         case "TURN_END":
-          set((state) => ({
+          set({
             currentTurn: {
-              ...state.currentTurn,
-              text: message.text,
+              speaker: null,
+              text: "",
               isStreaming: false,
             },
-          }));
+          });
 
           // Refresh session state to get the new turn
           if (sessionState) {

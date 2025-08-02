@@ -42,12 +42,18 @@ export function Transcript({ sessionState, currentTurn }: TranscriptProps) {
     }
   };
 
-  const formatTimestamp = (date: Date) => {
+  const formatTimestamp = (date: Date | string) => {
+    const dateObj = date instanceof Date ? date : new Date(date);
+
+    if (isNaN(dateObj.getTime())) {
+      return "Invalid time";
+    }
+
     return new Intl.DateTimeFormat("en-US", {
       hour: "2-digit",
       minute: "2-digit",
       second: "2-digit",
-    }).format(date);
+    }).format(dateObj);
   };
 
   return (

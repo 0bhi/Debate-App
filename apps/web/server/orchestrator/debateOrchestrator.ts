@@ -1,7 +1,5 @@
-type DebateStatus = "CREATED" | "RUNNING" | "JUDGING" | "FINISHED" | "FAILED";
-type DebateWinner = "A" | "B" | "TIE";
-type TurnSpeaker = "A" | "B" | "JUDGE";
 import { prisma } from "../services/prisma";
+import { DebateStatus, DebateWinner, TurnSpeaker } from "@prisma/client";
 import { llmService } from "../services/llm";
 import { ttsQueue } from "../queues";
 import { redisPub } from "../services/redis";
@@ -194,39 +192,48 @@ export class DebateOrchestrator {
         });
       }
 
-      // Get final response metadata
-      const response = await generator.return();
-      if (!response) throw new Error("No response from LLM");
+      if (!prompt || prompt.trim() === "") {
+        throw new Error("Prompt is empty or undefined");
+      }
+      if (!fullText || fullText.trim() === "") {
+        throw new Error("Response text is empty or undefined");
+      }
+      if (!sessionId) {
+        throw new Error("SessionId is missing");
+      }
 
       // Save turn to database
+      const turnData = {
+        sessionId,
+        orderIndex,
+        speaker: speaker as TurnSpeaker,
+        prompt,
+        response: fullText.trim(),
+      };
+
+      // Add debug logging
+      logger.info("Creating turn with data", { turnData });
+
       const turn = await prisma.debateTurn.create({
-        data: {
-          sessionId,
-          orderIndex,
-          speaker: speaker as TurnSpeaker,
-          prompt,
-          response: response.text,
-          tokensIn: response.tokensIn,
-          tokensOut: response.tokensOut,
-          durationMs: response.durationMs,
-        },
+        data: turnData,
       });
 
       // Queue TTS job
       await ttsQueue.add("generate-audio", {
         sessionId,
         orderIndex,
-        text: response.text,
+        text: fullText.trim(),
         voice: persona.voice,
       });
 
       // Broadcast turn end
       await this.broadcastToSession(sessionId, {
         type: "TURN_END",
-        text: response.text,
+        text: fullText.trim(),
         audioUrl: null, // Will be updated when TTS completes
       });
     } catch (error) {
+      console.log(error);
       logger.error("Turn processing failed", {
         sessionId,
         orderIndex,

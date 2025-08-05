@@ -1,8 +1,7 @@
 import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
-import { SessionState } from "../../server/orchestrator/debateOrchestrator";
+import { SessionState, CreateDebateRequest, Persona, ServerMessage } from "@repo/types";
 import { DebateWebSocketClient } from "../ws-client";
-import { CreateDebateRequest, Persona, ServerMessage } from "../validators";
 import { apiClient } from "../api";
 
 interface DebateStore {
@@ -134,7 +133,15 @@ export const useDebateStore = create<DebateStore>()(
 
       switch (message.type) {
         case "SESSION_STATE":
-          set({ sessionState: message.data });
+          set({
+            sessionState: message.data,
+            // Clear current turn when session state is updated
+            currentTurn: {
+              speaker: null,
+              text: "",
+              isStreaming: false,
+            },
+          });
           break;
 
         case "TURN_START":
@@ -157,13 +164,13 @@ export const useDebateStore = create<DebateStore>()(
           break;
 
         case "TURN_END":
-          set({
+          // Keep current turn visible but mark as not streaming
+          set((state) => ({
             currentTurn: {
-              speaker: null,
-              text: "",
+              ...state.currentTurn,
               isStreaming: false,
             },
-          });
+          }));
 
           // Refresh session state to get the new turn
           if (sessionState) {

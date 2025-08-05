@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getWebSocketServer } from "../../../server/ws";
+import { getWebSocketServer } from "@repo/server";
 
 // Initialize WebSocket server when this route is first accessed
 getWebSocketServer();

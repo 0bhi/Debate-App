@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { motion } from "framer-motion";
 import { Persona, CreateDebateRequest } from "../lib/validators";
 import { PRESET_PERSONAS } from "../lib/stores/debate-store";
 import toast from "react-hot-toast";
@@ -14,10 +13,20 @@ interface TopicFormProps {
 export function TopicForm({ onSubmit, isLoading = false }: TopicFormProps) {
   const [topic, setTopic] = useState("");
   const [personaA, setPersonaA] = useState<Persona>(
-    PRESET_PERSONAS["steve-jobs"]
+    PRESET_PERSONAS["steve-jobs"] || {
+      name: "Steve Jobs",
+      bio: "Co-founder and former CEO of Apple Inc.",
+      style: "Passionate, direct, and uncompromising.",
+      voice: "steve-jobs",
+    }
   );
   const [personaB, setPersonaB] = useState<Persona>(
-    PRESET_PERSONAS["elon-musk"]
+    PRESET_PERSONAS["elon-musk"] || {
+      name: "Elon Musk",
+      bio: "CEO of Tesla and SpaceX.",
+      style: "Visionary, occasionally sarcastic, data-driven.",
+      voice: "elon-musk",
+    }
   );
   const [rounds, setRounds] = useState(2);
   const [autoJudge, setAutoJudge] = useState(true);
@@ -45,7 +54,7 @@ export function TopicForm({ onSubmit, isLoading = false }: TopicFormProps) {
         rounds,
         autoJudge,
       });
-    } catch (error) {
+    } catch {
       toast.error("Failed to create debate");
     }
   };
@@ -66,18 +75,18 @@ export function TopicForm({ onSubmit, isLoading = false }: TopicFormProps) {
         <div className="space-y-2">
           <select
             value={
-              Object.keys(PRESET_PERSONAS).find(
-                (key) => PRESET_PERSONAS[key].name === persona.name
+              Object.keys(PRESET_PERSONAS || {}).find(
+                (key) => PRESET_PERSONAS?.[key]?.name === persona.name
               ) || ""
             }
             onChange={(e) => {
-              if (e.target.value && PRESET_PERSONAS[e.target.value]) {
-                setPersona(PRESET_PERSONAS[e.target.value]);
+              if (e.target.value && PRESET_PERSONAS?.[e.target.value]) {
+                setPersona(PRESET_PERSONAS[e.target.value]!);
               }
             }}
             className="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-slate-700 dark:border-slate-600 dark:text-white"
           >
-            {Object.entries(PRESET_PERSONAS).map(([key, presetPersona]) => (
+            {Object.entries(PRESET_PERSONAS || {}).map(([key, presetPersona]) => (
               <option key={key} value={key}>
                 {presetPersona.name}
               </option>

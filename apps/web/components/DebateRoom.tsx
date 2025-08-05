@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect } from "react";
-import { motion } from "framer-motion";
 import { useDebateStore } from "../lib/stores/debate-store";
 import { Avatar } from "./Avatar";
 import { Transcript } from "./Transcript";

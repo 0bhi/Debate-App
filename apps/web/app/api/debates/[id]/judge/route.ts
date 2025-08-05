@@ -1,15 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { debateOrchestrator } from "../../../../../server/orchestrator/debateOrchestrator";
-import { JudgeRequestSchema } from "../../../../../lib/validators";
-import { logger } from "../../../../../server/utils/logger";
+import { debateOrchestrator, logger } from "@repo/server";
+import { JudgeRequestSchema } from "@repo/types";
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
+  const sessionId = id;
+  
   try {
-    const sessionId = params.id;
     const body = await req.json();
 
     // Validate request body
@@ -51,7 +52,7 @@ export async function POST(
       );
     }
 
-    logger.error("Failed to judge debate", { error, sessionId: params.id });
+    logger.error("Failed to judge debate", { error, sessionId });
 
     return NextResponse.json(
       { error: "Failed to process judgment" },

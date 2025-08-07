@@ -1,15 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { debateOrchestrator } from "../../../../server/orchestrator/debateOrchestrator";
-import { logger } from "../../../../server/utils/logger";
+import { debateOrchestrator, logger } from "@repo/server";
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  try {
-    const { id } = await params;
-    const sessionId = id;
+  const { id } = await params;
+  const sessionId = id;
 
+  try {
     const sessionState = await debateOrchestrator.loadSessionState(sessionId);
 
     if (!sessionState) {
@@ -25,7 +24,7 @@ export async function GET(
   } catch (error) {
     logger.error("Failed to get debate session", {
       error,
-      sessionId: params.id,
+      sessionId,
     });
 
     return NextResponse.json(

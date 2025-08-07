@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { z } from "zod";
-import { debateOrchestrator } from "../../../server/orchestrator/debateOrchestrator";
-import { CreateDebateSchema } from "../../../lib/validators";
-import { logger } from "../../../server/utils/logger";
-import { authOptions } from "../auth/[...nextauth]/route";
+import { debateOrchestrator, logger } from "@repo/server";
+import { CreateDebateSchema } from "@repo/types";
+import { authOptions } from "../../../lib/auth";
 
 export async function POST(req: NextRequest) {
   try {

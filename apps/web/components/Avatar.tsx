@@ -62,9 +62,11 @@ export function Avatar({
 
   const { initials, colorClass } = getAvatarContent(persona.name);
 
+  const MotionDiv = motion.div;
+
   return (
     <div className={`flex flex-col items-center space-y-2 ${className}`}>
-      <motion.div
+      <div
         className={`
           ${sizeClasses[size]} 
           ${colorClass}
@@ -74,26 +76,29 @@ export function Avatar({
           ${isActive ? "border-blue-400 shadow-blue-400/50" : "border-slate-300"}
           ${isSpeaking ? "shadow-xl scale-110" : ""}
         `}
-        animate={
-          isSpeaking
-            ? {
-                scale: [1, 1.05, 1],
-                boxShadow: [
-                  "0 10px 15px -3px rgba(59, 130, 246, 0.3)",
-                  "0 20px 25px -5px rgba(59, 130, 246, 0.5)",
-                  "0 10px 15px -3px rgba(59, 130, 246, 0.3)",
-                ],
-              }
-            : {}
-        }
-        transition={{
-          duration: 0.8,
-          repeat: isSpeaking ? Infinity : 0,
-          ease: "easeInOut",
-        }}
       >
-        {initials}
-      </motion.div>
+        <MotionDiv
+          animate={
+            isSpeaking
+              ? {
+                  scale: [1, 1.05, 1],
+                  boxShadow: [
+                    "0 10px 15px -3px rgba(59, 130, 246, 0.3)",
+                    "0 20px 25px -5px rgba(59, 130, 246, 0.5)",
+                    "0 10px 15px -3px rgba(59, 130, 246, 0.3)",
+                  ],
+                }
+              : {}
+          }
+          transition={{
+            duration: 0.8,
+            repeat: isSpeaking ? Infinity : 0,
+            ease: "easeInOut",
+          }}
+        >
+          {initials}
+        </MotionDiv>
+      </div>
 
       <div className="text-center">
         <div
@@ -113,28 +118,29 @@ export function Avatar({
 
       {/* Speaking indicator */}
       {isSpeaking && (
-        <motion.div
-          className="flex space-x-1"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-        >
-          {[0, 1, 2].map((i) => (
-            <motion.div
-              key={i}
-              className="w-2 h-2 bg-blue-500 rounded-full"
-              animate={{
-                scale: [1, 1.5, 1],
-                opacity: [0.5, 1, 0.5],
-              }}
-              transition={{
-                duration: 0.6,
-                repeat: Infinity,
-                delay: i * 0.2,
-                ease: "easeInOut",
-              }}
-            />
-          ))}
-        </motion.div>
+        <div className="flex space-x-1">
+          <MotionDiv
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+          >
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="w-2 h-2 bg-blue-500 rounded-full">
+                <MotionDiv
+                  animate={{
+                    scale: [1, 1.5, 1],
+                    opacity: [0.5, 1, 0.5],
+                  }}
+                  transition={{
+                    duration: 0.6,
+                    repeat: Infinity,
+                    delay: i * 0.2,
+                    ease: "easeInOut",
+                  }}
+                />
+              </div>
+            ))}
+          </MotionDiv>
+        </div>
       )}
     </div>
   );

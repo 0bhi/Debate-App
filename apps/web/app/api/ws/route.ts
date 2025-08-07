@@ -1,8 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getWebSocketServer } from "../../../server/ws";
-
-// Initialize WebSocket server when this route is first accessed
-getWebSocketServer();
 
 export async function GET(req: NextRequest) {
   // For Next.js App Router, WebSocket upgrades are handled differently
@@ -18,7 +14,8 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const wsUrl = `ws://localhost:3001?sessionId=${sessionId}`;
+  const baseWsUrl = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:3001";
+  const wsUrl = `${baseWsUrl}?sessionId=${sessionId}`;
 
   return NextResponse.json({
     message: "WebSocket server is running",

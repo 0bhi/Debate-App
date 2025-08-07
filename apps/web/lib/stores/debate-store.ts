@@ -1,8 +1,12 @@
 import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
-import { SessionState } from "../../server/orchestrator/debateOrchestrator";
+import {
+  SessionState,
+  CreateDebateRequest,
+  Persona,
+  ServerMessage,
+} from "@repo/types";
 import { DebateWebSocketClient } from "../ws-client";
-import { CreateDebateRequest, Persona, ServerMessage } from "../validators";
 import { apiClient } from "../api";
 
 interface DebateStore {
@@ -32,175 +36,210 @@ interface DebateStore {
 }
 
 export const useDebateStore = create<DebateStore>()(
-  subscribeWithSelector((set, get) => ({
-    // Initial state
-    sessionState: null,
-    wsClient: null,
-    isConnected: false,
-    currentTurn: {
-      speaker: null,
-      text: "",
-      isStreaming: false,
-    },
-    error: null,
+  subscribeWithSelector((set, get) => {
+    // Debounce timer for TURN_END reloads
+    let reloadTimer: ReturnType<typeof setTimeout> | null = null;
 
-    // Actions
-    createDebate: async (request: CreateDebateRequest) => {
-      try {
-        set({ error: null });
-        const result = await apiClient.createDebate(request);
+    return {
+      // Initial state
+      sessionState: null,
+      wsClient: null,
+      isConnected: false,
+      currentTurn: {
+        speaker: null,
+        text: "",
+        isStreaming: false,
+      },
+      error: null,
 
-        // Auto-connect to WebSocket after creating debate
-        await get().connectWebSocket(result.id);
+      // Actions
+      createDebate: async (request: CreateDebateRequest) => {
+        try {
+          set({ error: null });
+          const result = await apiClient.createDebate(request);
 
-        return result.id;
-      } catch (error) {
-        const errorMessage =
-          error instanceof Error ? error.message : "Failed to create debate";
-        set({ error: errorMessage });
-        throw error;
-      }
-    },
+          // Auto-connect to WebSocket after creating debate
+          await get().connectWebSocket(result.id);
 
-    loadDebate: async (sessionId: string) => {
-      try {
-        set({ error: null });
-        const sessionState = await apiClient.getDebate(sessionId);
-        set({ sessionState });
-      } catch (error) {
-        const errorMessage =
-          error instanceof Error ? error.message : "Failed to load debate";
-        set({ error: errorMessage });
-        throw error;
-      }
-    },
+          return result.id;
+        } catch (error) {
+          const errorMessage =
+            error instanceof Error ? error.message : "Failed to create debate";
+          set({ error: errorMessage });
+          throw error;
+        }
+      },
 
-    connectWebSocket: async (sessionId: string) => {
-      try {
+      loadDebate: async (sessionId: string) => {
+        try {
+          set({ error: null });
+          const sessionState = await apiClient.getDebate(sessionId);
+          set({ sessionState });
+        } catch (error) {
+          const errorMessage =
+            error instanceof Error ? error.message : "Failed to load debate";
+          set({ error: errorMessage });
+          throw error;
+        }
+      },
+
+      connectWebSocket: async (sessionId: string) => {
+        try {
+          const { wsClient } = get();
+
+          // Disconnect existing connection
+          if (wsClient) {
+            wsClient.disconnect();
+          }
+
+          const newClient = new DebateWebSocketClient(sessionId);
+
+          // Set up event handlers
+          newClient.on("*", get().handleWebSocketMessage);
+
+          // Connect
+          await newClient.connect();
+
+          set({
+            wsClient: newClient,
+            isConnected: true,
+            error: null,
+          });
+        } catch (error) {
+          const errorMessage =
+            error instanceof Error
+              ? error.message
+              : "Failed to connect to WebSocket";
+          set({ error: errorMessage, isConnected: false });
+          throw error;
+        }
+      },
+
+      disconnectWebSocket: () => {
         const { wsClient } = get();
-
-        // Disconnect existing connection
         if (wsClient) {
           wsClient.disconnect();
+          set({ wsClient: null, isConnected: false });
         }
+      },
 
-        const newClient = new DebateWebSocketClient(sessionId);
+      judgeDebate: (winner: "A" | "B" | "TIE") => {
+        const { wsClient, sessionState } = get();
+        if (wsClient && sessionState) {
+          wsClient.judgeDebate(winner);
+        }
+      },
 
-        // Set up event handlers
-        newClient.on("*", get().handleWebSocketMessage);
+      clearError: () => set({ error: null }),
 
-        // Connect
-        await newClient.connect();
+      // Internal methods
+      setSessionState: (sessionState: SessionState) => set({ sessionState }),
 
-        set({
-          wsClient: newClient,
-          isConnected: true,
-          error: null,
-        });
-      } catch (error) {
-        const errorMessage =
-          error instanceof Error
-            ? error.message
-            : "Failed to connect to WebSocket";
-        set({ error: errorMessage, isConnected: false });
-        throw error;
-      }
-    },
+      setError: (error: string) => set({ error }),
 
-    disconnectWebSocket: () => {
-      const { wsClient } = get();
-      if (wsClient) {
-        wsClient.disconnect();
-        set({ wsClient: null, isConnected: false });
-      }
-    },
+      handleWebSocketMessage: (message: ServerMessage) => {
+        const { sessionState } = get();
 
-    judgeDebate: (winner: "A" | "B" | "TIE") => {
-      const { wsClient, sessionState } = get();
-      if (wsClient && sessionState) {
-        wsClient.judgeDebate(winner);
-      }
-    },
+        switch (message.type) {
+          case "SESSION_STATE": {
+            const incoming = message.data as SessionState;
+            // Only update if turns changed (length or last turn id)
+            set((state) => {
+              const prev = state.sessionState;
+              const prevLen = prev?.turns.length ?? 0;
+              const newLen = incoming.turns.length;
+              const prevLastId = prev?.turns[prevLen - 1]?.id;
+              const newLastId = incoming.turns[newLen - 1]?.id;
 
-    clearError: () => set({ error: null }),
+              const turnsChanged =
+                prevLen !== newLen || (prevLen > 0 && prevLastId !== newLastId);
 
-    // Internal methods
-    setSessionState: (sessionState: SessionState) => set({ sessionState }),
+              if (!turnsChanged) {
+                return state; // no-op to avoid re-render
+              }
 
-    setError: (error: string) => set({ error }),
-
-    handleWebSocketMessage: (message: ServerMessage) => {
-      const { sessionState } = get();
-
-      switch (message.type) {
-        case "SESSION_STATE":
-          set({ sessionState: message.data });
-          break;
-
-        case "TURN_START":
-          set({
-            currentTurn: {
-              speaker: message.speaker,
-              text: "",
-              isStreaming: true,
-            },
-          });
-          break;
-
-        case "TURN_TOKEN":
-          set((state) => ({
-            currentTurn: {
-              ...state.currentTurn,
-              text: state.currentTurn.text + message.chunk,
-            },
-          }));
-          break;
-
-        case "TURN_END":
-          set({
-            currentTurn: {
-              speaker: null,
-              text: "",
-              isStreaming: false,
-            },
-          });
-
-          // Refresh session state to get the new turn
-          if (sessionState) {
-            get().loadDebate(sessionState.id);
+              return {
+                ...state,
+                sessionState: {
+                  ...incoming,
+                  turns: [...incoming.turns].sort(
+                    (a, b) => a.orderIndex - b.orderIndex
+                  ),
+                },
+              };
+            });
+            break;
           }
-          break;
 
-        case "WINNER":
-          // Update session state with winner
-          if (sessionState) {
+          case "TURN_START":
+            // Just show a simple indicator that someone is speaking
             set({
-              sessionState: {
-                ...sessionState,
-                winner: message.winner,
-                judgeJSON: message.judgeJSON,
-                status: "FINISHED" as any,
+              currentTurn: {
+                speaker: message.speaker,
+                text: "Speaking...",
+                isStreaming: true,
               },
             });
+            break;
+
+          case "TURN_TOKEN":
+            // Ignore individual tokens - we'll wait for the complete turn
+            break;
+
+          case "TURN_END": {
+            // Clear the speaking indicator
+            set({
+              currentTurn: {
+                speaker: null,
+                text: "",
+                isStreaming: false,
+              },
+            });
+
+            // Debounce the DB reload to avoid rapid re-renders
+            if (reloadTimer) clearTimeout(reloadTimer);
+            if (sessionState) {
+              const id = sessionState.id;
+              reloadTimer = setTimeout(() => {
+                get()
+                  .loadDebate(id)
+                  .catch(() => {});
+              }, 200);
+            }
+            break;
           }
-          break;
 
-        case "ERROR":
-          set({ error: message.message });
-          break;
+          case "WINNER":
+            // Update session state with winner
+            if (sessionState) {
+              set({
+                sessionState: {
+                  ...sessionState,
+                  winner: message.winner,
+                  judgeJSON: message.judgeJSON,
+                  status: "FINISHED" as any,
+                },
+              });
+            }
+            break;
 
-        case "HEARTBEAT":
-          // Keep connection alive
-          break;
+          case "ERROR":
+            set({ error: message.message });
+            break;
 
-        default:
-          console.warn(
-            "Unknown WebSocket message type:",
-            (message as any).type
-          );
-      }
-    },
-  }))
+          case "HEARTBEAT":
+            // Keep connection alive
+            break;
+
+          default:
+            console.warn(
+              "Unknown WebSocket message type:",
+              (message as any).type
+            );
+        }
+      },
+    };
+  })
 );
 
 // Preset personas for easy selection

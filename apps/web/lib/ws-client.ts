@@ -1,7 +1,7 @@
 "use client";
 
-import { ClientMessage, ServerMessage } from "./validators";
-import { logger } from "../server/utils/logger";
+import { ClientMessage, ServerMessage } from "@repo/types";
+// Note: logger import removed as it's not available in the client-side code
 
 export type WSEventHandler = (message: ServerMessage) => void;
 

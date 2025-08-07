@@ -169,77 +169,40 @@ export function Transcript({ sessionState, currentTurn }: TranscriptProps) {
             );
           })}
 
-          {/* Current streaming turn */}
-          {currentTurn.speaker && (
-            <div
-              className={`flex gap-3 ${sessionState.turns.length % 2 === 0 ? "flex-row" : "flex-row-reverse"}`}
-            >
-              <MotionDiv
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-              >
-                <div className="flex gap-3 w-full">
-                  <div className="flex-shrink-0">
-                    <Avatar
-                      persona={
-                        currentTurn.speaker === "A"
-                          ? sessionState.personaA
-                          : sessionState.personaB
-                      }
-                      size="sm"
-                      isActive={true}
-                      isSpeaking={currentTurn.isStreaming}
-                    />
-                  </div>
-
+          {/* Current speaking indicator */}
+          {currentTurn.speaker && currentTurn.isStreaming && (
+            <div className="text-center py-4">
+              <div className="inline-flex items-center gap-2 px-4 py-2 bg-blue-50 dark:bg-blue-900/20 rounded-full">
+                <Avatar
+                  persona={
+                    currentTurn.speaker === "A"
+                      ? sessionState.personaA
+                      : sessionState.personaB
+                  }
+                  size="sm"
+                  isActive={true}
+                />
+                <span className="text-blue-600 dark:text-blue-400 text-sm">
+                  {currentTurn.speaker === "A"
+                    ? sessionState.personaA.name
+                    : sessionState.personaB.name}{" "}
+                  is speaking...
+                </span>
+                <div className="flex gap-1">
                   <div
-                    className={`flex-1 max-w-3xl ${sessionState.turns.length % 2 === 0 ? "mr-12" : "ml-12"}`}
-                  >
-                    <div
-                      className={`
-                      p-4 rounded-lg relative border-2 border-blue-300 dark:border-blue-600
-                      ${
-                        sessionState.turns.length % 2 === 0
-                          ? "bg-blue-50 dark:bg-blue-900/20 rounded-tl-none"
-                          : "bg-slate-50 dark:bg-slate-700 rounded-tr-none"
-                      }
-                    `}
-                    >
-                      <div
-                        className={`
-                        absolute top-0 w-0 h-0
-                        ${
-                          sessionState.turns.length % 2 === 0
-                            ? "-left-2 border-r-8 border-t-8 border-blue-50 dark:border-blue-900/20"
-                            : "-right-2 border-l-8 border-t-8 border-slate-50 dark:border-slate-700"
-                        }
-                        border-b-0 border-transparent
-                      `}
-                      />
-
-                      <div className="flex items-start gap-3">
-                        <p className="flex-1 text-slate-900 dark:text-white whitespace-pre-wrap">
-                          {currentTurn.text}
-                          {currentTurn.isStreaming && (
-                            <span className="inline-block w-2 h-4 bg-blue-500 ml-1">
-                              <MotionSpan
-                                animate={{ opacity: [1, 0] }}
-                                transition={{ duration: 0.8, repeat: Infinity }}
-                              />
-                            </span>
-                          )}
-                        </p>
-                      </div>
-
-                      {currentTurn.isStreaming && (
-                        <div className="mt-2 text-xs text-blue-600 dark:text-blue-400">
-                          Speaking...
-                        </div>
-                      )}
-                    </div>
-                  </div>
+                    className="w-1 h-1 bg-blue-500 rounded-full animate-bounce"
+                    style={{ animationDelay: "0ms" }}
+                  ></div>
+                  <div
+                    className="w-1 h-1 bg-blue-500 rounded-full animate-bounce"
+                    style={{ animationDelay: "150ms" }}
+                  ></div>
+                  <div
+                    className="w-1 h-1 bg-blue-500 rounded-full animate-bounce"
+                    style={{ animationDelay: "300ms" }}
+                  ></div>
                 </div>
-              </MotionDiv>
+              </div>
             </div>
           )}
         </AnimatePresence>
@@ -248,7 +211,6 @@ export function Transcript({ sessionState, currentTurn }: TranscriptProps) {
         {sessionState.turns.length === 0 && !currentTurn.speaker && (
           <div className="text-center text-slate-500 dark:text-slate-400 py-8">
             <p>The debate will begin shortly...</p>
-            {JSON.stringify(sessionState)}
           </div>
         )}
       </div>

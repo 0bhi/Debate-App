@@ -60,6 +60,13 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     type: z.literal("TURN_END"),
     text: z.string(),
     audioUrl: z.string().optional(),
+    orderIndex: z.number().optional(),
+    speaker: z.enum(["A", "B"]).optional(),
+  }),
+  z.object({
+    type: z.literal("AUDIO_READY"),
+    orderIndex: z.number(),
+    audioUrl: z.string(),
   }),
   z.object({
     type: z.literal("WINNER"),

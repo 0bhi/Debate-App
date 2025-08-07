@@ -25,16 +25,21 @@ export class DebateWebSocketServer {
     console.log("🔍 Debug - port parameter:", port);
     console.log("🔍 Debug - process.env.WS_PORT:", process.env.WS_PORT);
 
-    this.wss = new WebSocketServer({
-      port,
-      verifyClient: this.verifyClient.bind(this),
-    });
+    try {
+      this.wss = new WebSocketServer({
+        port,
+        verifyClient: this.verifyClient.bind(this),
+      });
 
-    this.setupEventHandlers();
-    this.setupRedisSubscription();
-    this.setupHeartbeat();
+      this.setupEventHandlers();
+      this.setupRedisSubscription();
+      this.setupHeartbeat();
 
-    logger.info(`WebSocket server started on port ${port}`);
+      logger.info(`WebSocket server started on port ${port}`);
+    } catch (error) {
+      logger.error("Failed to create WebSocket server", { error, port });
+      throw error;
+    }
   }
 
   private async verifyClient(info: { req: IncomingMessage }): Promise<boolean> {
@@ -45,6 +50,12 @@ export class DebateWebSocketServer {
       if (!sessionId) {
         logger.warn("WebSocket connection rejected: missing sessionId");
         return false;
+      }
+
+      // In development, be more lenient with session verification
+      if (env.NODE_ENV === "development") {
+        logger.info("Development mode: allowing WebSocket connection", { sessionId });
+        return true;
       }
 
       // Verify session exists
@@ -59,6 +70,11 @@ export class DebateWebSocketServer {
       return true;
     } catch (error) {
       logger.error("WebSocket verification failed", { error });
+      // In development, allow connection even if verification fails
+      if (env.NODE_ENV === "development") {
+        logger.warn("Development mode: allowing connection despite verification error");
+        return true;
+      }
       return false;
     }
   }
@@ -105,6 +121,16 @@ export class DebateWebSocketServer {
           type: "SESSION_STATE",
           data: sessionState,
         } as ServerMessage);
+
+        // Auto-start debate if it's newly created and not yet running
+        if (sessionState.status === "CREATED") {
+          logger.info("Auto-starting debate on first connection", { sessionId });
+          try {
+            await debateOrchestrator.startDebate(sessionId);
+          } catch (error) {
+            logger.error("Failed to auto-start debate", { sessionId, error });
+          }
+        }
       }
     } catch (error) {
       logger.error("Failed to send session state", { sessionId, error });
@@ -138,13 +164,14 @@ export class DebateWebSocketServer {
       const rawMessage = JSON.parse(data.toString());
       const message = ClientMessageSchema.parse(rawMessage);
 
-      logger.debug("WebSocket message received", {
+      logger.info("WebSocket message received", {
         sessionId: ws.sessionId,
-        type: message.type,
+        type: (message as any).type,
       });
 
       switch (message.type) {
         case "JOIN_SESSION":
+          logger.info("Handling JOIN_SESSION", { sessionId: message.sessionId });
           await this.handleJoinSession(ws, message.sessionId);
           break;
 

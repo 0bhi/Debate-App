@@ -1,4 +1,12 @@
 import "dotenv/config";
+import { config } from "dotenv";
+import { resolve, dirname, normalize } from "path";
+import { fileURLToPath } from "url";
+
+// Load environment variables from .env file
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+config({ path: resolve(__dirname, ".env") });
 
 import { getWebSocketServer } from "./ws";
 import { initializeQueues } from "./queues";
@@ -20,11 +28,20 @@ async function startServer() {
     logger.info("Starting AI Debate Club server...");
 
     // Initialize queues
-    await initializeQueues();
+    logger.info("Initializing queues...");
+    try {
+      await initializeQueues();
+      logger.info("Queues initialized successfully");
+    } catch (error) {
+      logger.warn("Failed to initialize queues, continuing without queues", {
+        error,
+      });
+    }
 
     // Start WebSocket server
     try {
       logger.info("🔍 Attempting to start WebSocket server...");
+      logger.info(`🔍 WS_PORT from env: ${env.WS_PORT}`);
       wsServer = getWebSocketServer();
       logger.info("✅ WebSocket server started successfully");
     } catch (error) {
@@ -33,6 +50,7 @@ async function startServer() {
     }
 
     // Start workers
+    logger.info("Starting TTS worker...");
     logger.info("TTS worker started");
 
     logger.info(`🚀 AI Debate Club server running!`);
@@ -61,9 +79,15 @@ async function startServer() {
   }
 }
 
-// Only start the server if this file is run directly
-if (import.meta.url === `file://${process.argv[1]}`) {
-  startServer();
+// Only start the server if this file is run directly (cross-platform safe)
+try {
+  const thisFilePath = normalize(fileURLToPath(import.meta.url));
+  const entryArg = process.argv[1] ? normalize(resolve(process.argv[1])) : "";
+  if (thisFilePath === entryArg) {
+    startServer();
+  }
+} catch {
+  // Fallback: do not auto-start on import
 }
 
 export { startServer };

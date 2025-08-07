@@ -159,6 +159,7 @@ export class DebateOrchestrator {
 
       // Stream LLM response
       const generator = llmService.streamDebateResponse(prompt, persona);
+      logger.info("LLM stream started", { sessionId, orderIndex, speaker });
       let fullText = "";
 
       for await (const chunk of generator) {
@@ -169,6 +170,7 @@ export class DebateOrchestrator {
           chunk,
         });
       }
+      logger.info("LLM stream ended", { sessionId, orderIndex, textLength: fullText.length });
 
       if (!prompt || prompt.trim() === "") {
         throw new Error("Prompt is empty or undefined");
@@ -195,6 +197,7 @@ export class DebateOrchestrator {
       const turn = await prisma.debateTurn.create({
         data: turnData,
       });
+      logger.info("Turn saved", { sessionId, orderIndex, turnId: turn.id });
 
       // Queue TTS job
       await ttsQueue.add("generate-audio", {
@@ -203,12 +206,15 @@ export class DebateOrchestrator {
         text: fullText.trim(),
         voice: persona.voice,
       });
+      logger.info("TTS job queued", { sessionId, orderIndex });
 
       // Broadcast turn end
       await this.broadcastToSession(sessionId, {
         type: "TURN_END",
         text: fullText.trim(),
         audioUrl: null, // Will be updated when TTS completes
+        orderIndex,
+        speaker,
       });
     } catch (error) {
       console.log(error);

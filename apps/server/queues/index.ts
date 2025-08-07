@@ -21,8 +21,20 @@ export async function initializeQueues() {
   try {
     // Clean up any existing jobs (optional, for development)
     if (env.NODE_ENV === "development") {
-      await ttsQueue.obliterate({ force: true });
-      await exportQueue.obliterate({ force: true });
+      logger.info("Development mode: cleaning up existing jobs...");
+      try {
+        await ttsQueue.obliterate({ force: true });
+        logger.info("TTS queue cleaned");
+      } catch (error) {
+        logger.warn("Failed to clean TTS queue, continuing...", { error });
+      }
+      
+      try {
+        await exportQueue.obliterate({ force: true });
+        logger.info("Export queue cleaned");
+      } catch (error) {
+        logger.warn("Failed to clean export queue, continuing...", { error });
+      }
     }
 
     logger.info("Queues initialized successfully");

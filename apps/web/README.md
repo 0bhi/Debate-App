@@ -31,11 +31,25 @@ Watch AI personas debate in real-time with streaming text, TTS audio, animated a
    cp apps/web/.env.example apps/web/.env
    ```
 
-2. **Add your OpenAI API key** to `apps/web/.env`:
+2. **Configure environment variables**:
 
-   ```bash
-   OPENAI_API_KEY=sk-your-openai-api-key-here
-   ```
+   Vercel (apps/web):
+   - NEXTAUTH_SECRET=your-random-secret
+   - NEXTAUTH_URL=https://your-vercel-domain.vercel.app
+   - NEXT_PUBLIC_SERVER_API_URL=https://your-server-base-url (e.g. Railway/Render/Fly)
+   - NEXT_PUBLIC_WS_URL=wss://your-ws-host:port
+
+   Server (apps/server):
+   - DATABASE_URL=...
+   - REDIS_URL=...
+   - S3_ACCESS_KEY_ID=...
+   - S3_SECRET_ACCESS_KEY=...
+   - S3_REGION=...
+   - S3_ENDPOINT=...
+   - S3_BUCKET=...
+   - GEMINI_API_KEY=...
+   - WS_PORT=3001
+   - HTTP_PORT=3002
 
 3. **Start everything**:
    ```bash

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { env } from "../../../lib/env";
 
 export async function GET(req: NextRequest) {
   // For Next.js App Router, WebSocket upgrades are handled differently
@@ -14,7 +15,7 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const baseWsUrl = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:3001";
+  const baseWsUrl = env.NEXT_PUBLIC_WS_URL || `ws://localhost:3001`;
   const wsUrl = `${baseWsUrl}?sessionId=${sessionId}`;
 
   return NextResponse.json({

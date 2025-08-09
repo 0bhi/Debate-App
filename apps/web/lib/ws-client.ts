@@ -14,9 +14,13 @@ export class DebateWebSocketClient {
   private maxReconnectAttempts = 5;
   private reconnectDelay = 1000; // Start with 1 second
 
-  constructor(sessionId: string, baseUrl: string = "ws://localhost:3001") {
+  constructor(sessionId: string, baseUrl?: string) {
     this.sessionId = sessionId;
-    this.url = `${baseUrl}?sessionId=${sessionId}`;
+    const resolvedBaseUrl =
+      baseUrl ||
+      (process.env.NEXT_PUBLIC_WS_URL as string) ||
+      "ws://localhost:3001";
+    this.url = `${resolvedBaseUrl}?sessionId=${sessionId}`;
   }
 
   connect(): Promise<void> {

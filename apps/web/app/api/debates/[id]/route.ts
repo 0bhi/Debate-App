@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { debateOrchestrator, logger } from "@repo/server";
+import { logger } from "../../../../lib/logger";
 
 export async function GET(
   req: NextRequest,
@@ -9,7 +9,22 @@ export async function GET(
   const sessionId = id;
 
   try {
-    const sessionState = await debateOrchestrator.loadSessionState(sessionId);
+    const serverUrl =
+      process.env.SERVER_URL ||
+      process.env.NEXT_PUBLIC_SERVER_API_URL ||
+      `http://localhost:3002`;
+    const resp = await fetch(`${serverUrl}/debates/${sessionId}`);
+    if (!resp.ok) {
+      if (resp.status === 404) {
+        return NextResponse.json(
+          { error: "Debate session not found" },
+          { status: 404 }
+        );
+      }
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.error || `Server error ${resp.status}`);
+    }
+    const sessionState = await resp.json();
 
     if (!sessionState) {
       return NextResponse.json(

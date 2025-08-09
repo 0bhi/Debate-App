@@ -1,6 +1,9 @@
 import { CreateDebateRequest, JudgeRequest } from "./validators";
+import { env } from "./env";
 
-const API_BASE = "/api";
+// Prefer calling the web's API routes, which proxy to the server.
+// If a public server API URL is provided, call it directly from the client.
+const API_BASE = env.NEXT_PUBLIC_SERVER_API_URL || "/api";
 
 class ApiClient {
   private async request<T>(

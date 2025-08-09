@@ -40,6 +40,19 @@ const envSchema = z.object({
     .string()
     .transform((val: string) => parseInt(val, 10))
     .default("3001"),
+  WS_PUBLIC_URL: z.string().url().optional(),
+
+  // HTTP Server
+  SERVER_PORT: z
+    .string()
+    .transform((val: string) => parseInt(val, 10))
+    .default("3002"),
+
+  // HTTP API
+  HTTP_PORT: z
+    .string()
+    .transform((val: string) => parseInt(val, 10))
+    .default("3002"),
 
   // Environment
   NODE_ENV: z

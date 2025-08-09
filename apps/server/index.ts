@@ -23,6 +23,7 @@ export type { SessionState } from "@repo/types";
 
 async function startServer() {
   let wsServer: any;
+  let httpServer: any;
 
   try {
     logger.info("Starting AI Debate Club server...");
@@ -49,19 +50,36 @@ async function startServer() {
       throw error; // Re-throw to see the full error
     }
 
+    // Start HTTP API server
+    try {
+      const { createHttpServer } = await import("./server");
+      httpServer = createHttpServer();
+      httpServer.listen(env.HTTP_PORT, () => {
+        logger.info(`✅ HTTP API server listening on port ${env.HTTP_PORT}`);
+      });
+    } catch (error) {
+      logger.error("❌ Failed to start HTTP API server:", error);
+      throw error;
+    }
+
     // Start workers
     logger.info("Starting TTS worker...");
     logger.info("TTS worker started");
 
     logger.info(`🚀 AI Debate Club server running!`);
     logger.info(`📡 WebSocket server: ws://localhost:${env.WS_PORT}`);
+    logger.info(`🛠  HTTP API server: http://localhost:${env.HTTP_PORT}`);
     logger.info(`🎬 Next.js app: http://localhost:3000`);
 
     // Graceful shutdown
     process.on("SIGTERM", async () => {
       logger.info("Received SIGTERM, shutting down gracefully...");
 
-      await Promise.all([wsServer.close(), ttsWorker.close()]);
+      await Promise.all([
+        wsServer.close(),
+        new Promise((res, rej) => httpServer?.close((e: any) => (e ? rej(e) : res(null)))),
+        ttsWorker.close(),
+      ]);
 
       process.exit(0);
     });
@@ -69,7 +87,11 @@ async function startServer() {
     process.on("SIGINT", async () => {
       logger.info("Received SIGINT, shutting down gracefully...");
 
-      await Promise.all([wsServer.close(), ttsWorker.close()]);
+      await Promise.all([
+        wsServer.close(),
+        new Promise((res, rej) => httpServer?.close((e: any) => (e ? rej(e) : res(null)))),
+        ttsWorker.close(),
+      ]);
 
       process.exit(0);
     });

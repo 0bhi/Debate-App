@@ -39,7 +39,10 @@ export function createHttpServer() {
     // CORS for ease of development and separate deploys
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "content-type, authorization");
+    res.setHeader(
+      "Access-Control-Allow-Headers",
+      "content-type, authorization"
+    );
     if (method === "OPTIONS") {
       res.writeHead(204);
       return res.end();
@@ -55,28 +58,35 @@ export function createHttpServer() {
       }
 
       // GET /debates/:id
+      // ...
+      // GET /debates/:id
       const debateMatch = url.pathname?.match(/^\/debates\/([^/]+)$/);
       if (method === "GET" && debateMatch) {
-        const id = debateMatch[1];
+        const id = debateMatch[1]!; // assert non-null
         const state = await debateOrchestrator.loadSessionState(id);
-        if (!state) return sendJson(res, 404, { error: "Debate session not found" });
+        if (!state)
+          return sendJson(res, 404, { error: "Debate session not found" });
         return sendJson(res, 200, state);
       }
 
       // POST /debates/:id/judge
       const judgeMatch = url.pathname?.match(/^\/debates\/([^/]+)\/judge$/);
       if (method === "POST" && judgeMatch) {
-        const id = judgeMatch[1];
+        const id = judgeMatch[1]!; // assert non-null
         const body = await parseJsonBody(req);
         const validated = JudgeRequestSchema.parse(body);
         const exists = await debateOrchestrator.loadSessionState(id);
-        if (!exists) return sendJson(res, 404, { error: "Debate session not found" });
+        if (!exists)
+          return sendJson(res, 404, { error: "Debate session not found" });
         if (exists.status !== "JUDGING" && exists.status !== "FINISHED") {
-          return sendJson(res, 400, { error: "Debate is not ready for judging" });
+          return sendJson(res, 400, {
+            error: "Debate is not ready for judging",
+          });
         }
         await debateOrchestrator.userJudgeDebate(id, validated.winner);
         return sendJson(res, 200, { success: true, winner: validated.winner });
       }
+      // ...
 
       // GET /health
       if (method === "GET" && url.pathname === "/health") {
@@ -88,7 +98,10 @@ export function createHttpServer() {
     } catch (error: any) {
       logger.error("HTTP handler error", { error });
       if (error?.name === "ZodError") {
-        return sendJson(res, 400, { error: "Invalid request data", details: error.errors });
+        return sendJson(res, 400, {
+          error: "Invalid request data",
+          details: error.errors,
+        });
       }
       sendJson(res, 500, { error: "Internal server error" });
     }
@@ -96,5 +109,3 @@ export function createHttpServer() {
 
   return server;
 }
-
-

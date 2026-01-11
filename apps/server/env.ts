@@ -35,6 +35,17 @@ const envSchema = z.object({
     .transform((val: string) => parseInt(val, 10))
     .default("3"),
 
+  // Gemini API rate limiting (requests per minute)
+  // Free tier: ~15 RPM, Paid tier: higher limits
+  GEMINI_RATE_LIMIT_RPM: z
+    .string()
+    .transform((val: string) => parseInt(val, 10))
+    .default("10"), // Conservative default to avoid 429 errors
+  GEMINI_RATE_LIMIT_WINDOW_SECONDS: z
+    .string()
+    .transform((val: string) => parseInt(val, 10))
+    .default("60"), // 1 minute window
+
   // WebSocket
   WS_PORT: z
     .string()

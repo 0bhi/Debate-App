@@ -1,25 +1,12 @@
 import { z } from "zod";
 
-// Persona schema
-export const PersonaSchema = z.object({
-  name: z.string().min(1).max(100),
-  bio: z.string().min(1).max(500),
-  style: z.string().min(1).max(200),
-  voice: z.string().min(1).max(50),
-});
-
 // Create debate request schema
 export const CreateDebateSchema = z.object({
   topic: z.string().min(10).max(500),
-  personaA: PersonaSchema,
-  personaB: PersonaSchema,
+  debaterAId: z.string().optional(), // Optional - can be set later
+  debaterBId: z.string().optional(), // Optional - can be set later
   rounds: z.number().int().min(1).max(5).default(2),
-  autoJudge: z.boolean().default(true),
-});
-
-// Judge request schema
-export const JudgeRequestSchema = z.object({
-  winner: z.enum(["A", "B", "TIE"]),
+  autoJudge: z.boolean().default(true), // Always true, kept for backwards compatibility
 });
 
 // WebSocket message schemas
@@ -33,9 +20,9 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
     sessionId: z.string(),
   }),
   z.object({
-    type: z.literal("USER_JUDGE"),
+    type: z.literal("SUBMIT_ARGUMENT"),
     sessionId: z.string(),
-    winner: z.enum(["A", "B", "TIE"]),
+    argument: z.string().min(10).max(2000),
   }),
   z.object({
     type: z.literal("PING"),
@@ -59,14 +46,13 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("TURN_END"),
     text: z.string(),
-    audioUrl: z.string().optional(),
     orderIndex: z.number().optional(),
     speaker: z.enum(["A", "B"]).optional(),
   }),
   z.object({
-    type: z.literal("AUDIO_READY"),
+    type: z.literal("YOUR_TURN"),
+    speaker: z.enum(["A", "B"]),
     orderIndex: z.number(),
-    audioUrl: z.string(),
   }),
   z.object({
     type: z.literal("WINNER"),
@@ -83,9 +69,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
 ]);
 
 // Export types
-export type Persona = z.infer<typeof PersonaSchema>;
 export type CreateDebateRequest = z.infer<typeof CreateDebateSchema>;
-export type JudgeRequest = z.infer<typeof JudgeRequestSchema>;
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;
 
@@ -93,8 +77,10 @@ export type ServerMessage = z.infer<typeof ServerMessageSchema>;
 export interface SessionState {
   id: string;
   topic: string;
-  personaA: Persona;
-  personaB: Persona;
+  debaterAId?: string;
+  debaterBId?: string;
+  debaterAName?: string;
+  debaterBName?: string;
   rounds: number;
   status: string;
   winner?: string;
@@ -105,7 +91,6 @@ export interface SessionState {
     orderIndex: number;
     speaker: string;
     response: string;
-    audioUrl?: string;
     createdAt: Date;
   }>;
   createdAt: Date;

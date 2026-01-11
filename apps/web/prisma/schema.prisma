@@ -43,9 +43,18 @@ model User {
   email         String          @unique
   emailVerified DateTime?
   image         String?
+  password      String?         // Hashed password for email/password authentication
   accounts      Account[]
   sessions      Session[]
-  debates       DebateSession[]
+  createdDebates DebateSession[] @relation("CreatedDebates")
+  debatesAsA     DebateSession[] @relation("DebaterA")
+  debatesAsB     DebateSession[] @relation("DebaterB")
+  sentFriendRequests     FriendRequest[] @relation("Sender")
+  receivedFriendRequests FriendRequest[] @relation("Receiver")
+  sentChallenges         DebateChallenge[] @relation("Challenger")
+  receivedChallenges     DebateChallenge[] @relation("Challenged")
+  friendshipsAsUser1     Friendship[] @relation("User1")
+  friendshipsAsUser2     Friendship[] @relation("User2")
   createdAt     DateTime        @default(now())
 }
 
@@ -58,24 +67,31 @@ model VerificationToken {
 }
 
 model DebateSession {
-  id        String        @id @default(cuid())
-  user      User?         @relation(fields: [userId], references: [id])
-  userId    String?
-  topic     String
-  personaA  Json          // { name, bio, style, voice }
-  personaB  Json
-  rounds    Int
-  status    DebateStatus  @default(CREATED)
-  winner    DebateWinner?
-  judgeJSON Json?
-  autoJudge Boolean       @default(true)
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
-  turns     DebateTurn[]
+  id                  String        @id @default(cuid())
+  creator             User?         @relation("CreatedDebates", fields: [userId], references: [id])
+  userId              String?
+  topic               String
+  debaterA            User?         @relation("DebaterA", fields: [debaterAId], references: [id])
+  debaterAId          String?
+  debaterB            User?         @relation("DebaterB", fields: [debaterBId], references: [id])
+  debaterBId          String?
+  rounds              Int
+  status              DebateStatus  @default(CREATED)
+  winner              DebateWinner?
+  judgeJSON           Json?
+  autoJudge           Boolean       @default(true)
+  inviteToken         String?       @unique
+  inviteTokenExpiresAt DateTime?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+  turns               DebateTurn[]
 
   @@index([userId])
+  @@index([debaterAId])
+  @@index([debaterBId])
   @@index([status])
   @@index([createdAt])
+  @@index([inviteToken])
 }
 
 enum DebateStatus {
@@ -98,14 +114,10 @@ model DebateTurn {
   sessionId   String
   orderIndex  Int
   speaker     TurnSpeaker
-  prompt      String      @db.Text
   response    String      @db.Text
-  audioUrl    String?
-  tokensIn    Int?
-  tokensOut   Int?
-  durationMs  Int?
   createdAt   DateTime    @default(now())
 
+  @@unique([sessionId, orderIndex])
   @@index([sessionId])
   @@index([sessionId, orderIndex])
 }
@@ -126,4 +138,64 @@ model RateLimit {
 
   @@index([key])
   @@index([resetTime])
+}
+
+model FriendRequest {
+  id        String   @id @default(cuid())
+  senderId  String
+  receiverId String
+  status    FriendRequestStatus @default(PENDING)
+  sender    User     @relation("Sender", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver  User     @relation("Receiver", fields: [receiverId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([senderId, receiverId])
+  @@index([senderId])
+  @@index([receiverId])
+  @@index([status])
+}
+
+enum FriendRequestStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+model Friendship {
+  id        String   @id @default(cuid())
+  user1Id   String
+  user2Id   String
+  user1     User     @relation("User1", fields: [user1Id], references: [id], onDelete: Cascade)
+  user2     User     @relation("User2", fields: [user2Id], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([user1Id, user2Id])
+  @@index([user1Id])
+  @@index([user2Id])
+}
+
+model DebateChallenge {
+  id          String              @id @default(cuid())
+  challengerId String
+  challengedId String
+  topic       String
+  rounds      Int                 @default(3)
+  status      ChallengeStatus     @default(PENDING)
+  debateId    String?             // If challenge is accepted, link to created debate
+  challenger  User                @relation("Challenger", fields: [challengerId], references: [id], onDelete: Cascade)
+  challenged  User                @relation("Challenged", fields: [challengedId], references: [id], onDelete: Cascade)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@index([challengerId])
+  @@index([challengedId])
+  @@index([status])
+}
+
+enum ChallengeStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  EXPIRED
 } 

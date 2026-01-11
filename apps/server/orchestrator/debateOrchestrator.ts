@@ -1,26 +1,46 @@
-import { prisma } from "../services/prisma";
-import { DebateStatus, DebateWinner, TurnSpeaker } from "@prisma/client";
+import { prisma, DebateWinner, TurnSpeaker } from "@repo/database";
 import { llmService } from "../services/llm";
-import { ttsQueue } from "../queues";
 import { redisPub } from "../services/redis";
 import { logger } from "../utils/logger";
-import { CreateDebateRequest, Persona, SessionState } from "@repo/types";
+import { CreateDebateRequest, SessionState } from "@repo/types";
+import { randomBytes } from "crypto";
 
 export class DebateOrchestrator {
+  private pendingTurns = new Map<
+    string,
+    { orderIndex: number; speaker: "A" | "B" }
+  >();
+  private judgingInProgress = new Set<string>();
+  private startingDebates = new Set<string>();
+
+  private generateInviteToken(): string {
+    return randomBytes(32).toString("base64url");
+  }
+
   async createDebateSession(
     request: CreateDebateRequest,
     userId?: string
   ): Promise<{ id: string; wsUrl: string }> {
     try {
+      const inviteToken = this.generateInviteToken();
+      const inviteTokenExpiresAt = new Date();
+      inviteTokenExpiresAt.setDate(inviteTokenExpiresAt.getDate() + 7);
+
       const session = await prisma.debateSession.create({
         data: {
           topic: request.topic,
-          personaA: request.personaA as any,
-          personaB: request.personaB as any,
+          debaterAId: request.debaterAId || null,
+          debaterBId: request.debaterBId || null,
           rounds: request.rounds,
-          autoJudge: request.autoJudge,
+          autoJudge: true,
           userId,
           status: "CREATED",
+          inviteToken,
+          inviteTokenExpiresAt,
+        },
+        include: {
+          debaterA: true,
+          debaterB: true,
         },
       });
 
@@ -30,11 +50,9 @@ export class DebateOrchestrator {
         userId,
       });
 
-      const wsUrl = `/api/ws?sessionId=${session.id}`;
-
       return {
         id: session.id,
-        wsUrl,
+        wsUrl: `/api/ws?sessionId=${session.id}`,
       };
     } catch (error) {
       logger.error("Failed to create debate session", { error, request });
@@ -50,6 +68,8 @@ export class DebateOrchestrator {
           turns: {
             orderBy: { orderIndex: "asc" },
           },
+          debaterA: true,
+          debaterB: true,
         },
       });
 
@@ -60,8 +80,12 @@ export class DebateOrchestrator {
       return {
         id: session.id,
         topic: session.topic,
-        personaA: session.personaA as Persona,
-        personaB: session.personaB as Persona,
+        debaterAId: session.debaterAId || undefined,
+        debaterBId: session.debaterBId || undefined,
+        debaterAName:
+          session.debaterA?.name || session.debaterA?.email || "Debater A",
+        debaterBName:
+          session.debaterB?.name || session.debaterB?.email || "Debater B",
         rounds: session.rounds,
         status: session.status,
         winner: session.winner || undefined,
@@ -72,7 +96,6 @@ export class DebateOrchestrator {
           orderIndex: turn.orderIndex,
           speaker: turn.speaker,
           response: turn.response,
-          audioUrl: turn.audioUrl || undefined,
           createdAt: turn.createdAt,
         })),
         createdAt: session.createdAt,
@@ -85,154 +108,472 @@ export class DebateOrchestrator {
   }
 
   async startDebate(sessionId: string): Promise<void> {
-    logger.info("Starting debate", { sessionId });
+    if (this.startingDebates.has(sessionId)) {
+      return;
+    }
 
     try {
+      this.startingDebates.add(sessionId);
+
       const state = await this.loadSessionState(sessionId);
       if (!state) {
         throw new Error("Session not found");
       }
 
       if (state.status !== "CREATED") {
-        throw new Error(`Cannot start debate from status: ${state.status}`);
+        return;
       }
 
-      // Update status to RUNNING
-      await prisma.debateSession.update({
-        where: { id: sessionId },
+      if (!state.debaterAId || !state.debaterBId) {
+        throw new Error(
+          "Both debaters must be assigned before starting debate"
+        );
+      }
+
+      const updateResult = await prisma.debateSession.updateMany({
+        where: {
+          id: sessionId,
+          status: "CREATED",
+        },
         data: { status: "RUNNING" },
       });
 
-      // Start the debate flow
-      this.runDebateFlow(sessionId).catch((error) => {
-        logger.error("Debate flow failed", { sessionId, error });
-      });
+      if (updateResult.count === 0) {
+        return;
+      }
+
+      await this.initiateNextTurn(sessionId);
     } catch (error) {
       logger.error("Failed to start debate", { sessionId, error });
+      await prisma.debateSession.update({
+        where: { id: sessionId },
+        data: {
+          status: "FAILED",
+          judgeJSON: {
+            error: error instanceof Error ? error.message : String(error),
+            timestamp: new Date().toISOString(),
+          },
+        },
+      });
+      await this.broadcastToSession(sessionId, {
+        type: "ERROR",
+        message: "Failed to start debate. Please try again.",
+      });
       throw error;
+    } finally {
+      this.startingDebates.delete(sessionId);
     }
   }
 
-  private async runDebateFlow(sessionId: string): Promise<void> {
+  async initiateNextTurn(sessionId: string): Promise<void> {
     try {
       const state = await this.loadSessionState(sessionId);
       if (!state) {
         throw new Error("Session not found");
       }
 
-      let currentSpeaker: "A" | "B" = "A";
-      const totalTurns = state.rounds * 2; // Each round has 2 turns (A then B)
-
-      for (let i = 0; i < totalTurns; i++) {
-        await this.processTurn(sessionId, i, currentSpeaker);
-        currentSpeaker = currentSpeaker === "A" ? "B" : "A";
+      if (state.status !== "RUNNING") {
+        return;
       }
 
-      // Move to judging phase
-      await this.startJudging(sessionId);
+      const currentTurnCount = state.turns.length;
+      const totalTurns = state.rounds * 2;
+
+      if (currentTurnCount >= totalTurns) {
+        if (this.judgingInProgress.has(sessionId)) {
+          return;
+        }
+
+        const currentSession = await prisma.debateSession.findUnique({
+          where: { id: sessionId },
+          select: { status: true, winner: true },
+        });
+
+        if (
+          !currentSession ||
+          currentSession.status !== "RUNNING" ||
+          currentSession.winner
+        ) {
+          return;
+        }
+
+        await this.startJudging(sessionId);
+        return;
+      }
+
+      const currentSpeaker: "A" | "B" = currentTurnCount % 2 === 0 ? "A" : "B";
+      const orderIndex = currentTurnCount;
+
+      const existingTurn = await prisma.debateTurn.findFirst({
+        where: {
+          sessionId,
+          orderIndex,
+        },
+      });
+
+      if (existingTurn) {
+        this.pendingTurns.delete(sessionId);
+        await this.initiateNextTurn(sessionId);
+        return;
+      }
+
+      this.pendingTurns.set(sessionId, { orderIndex, speaker: currentSpeaker });
+
+      await this.broadcastToSession(sessionId, {
+        type: "YOUR_TURN",
+        speaker: currentSpeaker,
+        orderIndex,
+      });
+
+      logger.info("Turn initiated", {
+        sessionId,
+        orderIndex,
+        speaker: currentSpeaker,
+      });
     } catch (error) {
-      await this.markDebateFailed(sessionId, error);
+      logger.error("Failed to initiate next turn", { sessionId, error });
       throw error;
     }
   }
 
-  private async processTurn(
+  async submitArgument(
     sessionId: string,
-    orderIndex: number,
-    speaker: "A" | "B"
+    userId: string,
+    argument: string
   ): Promise<void> {
-    logger.info("Processing turn", { sessionId, orderIndex, speaker });
-
-    // Broadcast turn start
-    await this.broadcastToSession(sessionId, {
-      type: "TURN_START",
-      speaker,
-      orderIndex,
-    });
-
     try {
       const state = await this.loadSessionState(sessionId);
-      if (!state) throw new Error("Session not found");
+      if (!state) {
+        throw new Error("Session not found");
+      }
 
-      const persona = speaker === "A" ? state.personaA : state.personaB;
-      const prompt = this.buildDebatePrompt(state, speaker, orderIndex);
+      if (state.status !== "RUNNING") {
+        throw new Error("Debate is not running");
+      }
 
-      // Stream LLM response
-      const generator = llmService.streamDebateResponse(prompt, persona);
-      logger.info("LLM stream started", { sessionId, orderIndex, speaker });
-      let fullText = "";
+      const pendingTurn = this.pendingTurns.get(sessionId);
+      if (!pendingTurn) {
+        throw new Error("No pending turn for this session");
+      }
 
-      for await (const chunk of generator) {
-        fullText += chunk;
-        // Broadcast each chunk
-        await this.broadcastToSession(sessionId, {
-          type: "TURN_TOKEN",
-          chunk,
+      const expectedOrderIndex = state.turns.length;
+      if (pendingTurn.orderIndex !== expectedOrderIndex) {
+        this.pendingTurns.delete(sessionId);
+        throw new Error(
+          `Invalid turn order. Expected ${expectedOrderIndex}, got ${pendingTurn.orderIndex}`
+        );
+      }
+
+      const existingTurn = await prisma.debateTurn.findFirst({
+        where: {
+          sessionId,
+          orderIndex: pendingTurn.orderIndex,
+        },
+      });
+
+      if (existingTurn) {
+        this.pendingTurns.delete(sessionId);
+        const updatedState = await this.loadSessionState(sessionId);
+        if (updatedState) {
+          await this.broadcastToSession(sessionId, {
+            type: "SESSION_STATE",
+            data: updatedState,
+          } as any);
+        }
+        throw new Error("Turn already submitted for this order");
+      }
+
+      const expectedDebaterId =
+        pendingTurn.speaker === "A" ? state.debaterAId : state.debaterBId;
+      if (userId !== expectedDebaterId) {
+        throw new Error("It's not your turn to speak");
+      }
+
+      if (!argument || argument.trim().length < 10) {
+        throw new Error("Argument must be at least 10 characters long");
+      }
+
+      if (argument.trim().length > 2000) {
+        throw new Error("Argument must be less than 2000 characters");
+      }
+
+      const turn = await prisma.debateTurn
+        .create({
+          data: {
+            sessionId,
+            orderIndex: pendingTurn.orderIndex,
+            speaker: pendingTurn.speaker as TurnSpeaker,
+            response: argument.trim(),
+          },
+        })
+        .catch(async (error: any) => {
+          if (
+            error.code === "P2002" ||
+            error.meta?.target?.includes("sessionId_orderIndex")
+          ) {
+            this.pendingTurns.delete(sessionId);
+            const updatedState = await this.loadSessionState(sessionId);
+            if (updatedState) {
+              await this.broadcastToSession(sessionId, {
+                type: "SESSION_STATE",
+                data: updatedState,
+              } as any);
+            }
+            throw new Error("Turn already submitted");
+          }
+          throw error;
         });
-      }
-      logger.info("LLM stream ended", { sessionId, orderIndex, textLength: fullText.length });
 
-      if (!prompt || prompt.trim() === "") {
-        throw new Error("Prompt is empty or undefined");
-      }
-      if (!fullText || fullText.trim() === "") {
-        throw new Error("Response text is empty or undefined");
-      }
-      if (!sessionId) {
-        throw new Error("SessionId is missing");
-      }
+      this.pendingTurns.delete(sessionId);
 
-      // Save turn to database
-      const turnData = {
-        sessionId,
-        orderIndex,
-        speaker: speaker as TurnSpeaker,
-        prompt,
-        response: fullText.trim(),
-      };
-
-      // Add debug logging
-      logger.info("Creating turn with data", { turnData });
-
-      const turn = await prisma.debateTurn.create({
-        data: turnData,
-      });
-      logger.info("Turn saved", { sessionId, orderIndex, turnId: turn.id });
-
-      // Queue TTS job
-      await ttsQueue.add("generate-audio", {
-        sessionId,
-        orderIndex,
-        text: fullText.trim(),
-        voice: persona.voice,
-      });
-      logger.info("TTS job queued", { sessionId, orderIndex });
-
-      // Broadcast turn end
       await this.broadcastToSession(sessionId, {
         type: "TURN_END",
-        text: fullText.trim(),
-        audioUrl: null, // Will be updated when TTS completes
-        orderIndex,
-        speaker,
+        text: argument.trim(),
+        orderIndex: pendingTurn.orderIndex,
+        speaker: pendingTurn.speaker,
       });
+
+      await this.initiateNextTurn(sessionId);
     } catch (error) {
-      console.log(error);
-      logger.error("Turn processing failed", {
+      logger.error("Failed to submit argument", { sessionId, userId, error });
+      throw error;
+    }
+  }
+
+  async assignDebater(
+    sessionId: string,
+    position: "A" | "B",
+    userId: string
+  ): Promise<void> {
+    try {
+      const session = await prisma.debateSession.findUnique({
+        where: { id: sessionId },
+        select: { debaterAId: true, debaterBId: true, status: true },
+      });
+
+      if (!session) {
+        throw new Error("Session not found");
+      }
+
+      const currentDebaterId =
+        position === "A" ? session.debaterAId : session.debaterBId;
+      if (currentDebaterId && currentDebaterId !== userId) {
+        throw new Error(
+          `Position ${position} is already assigned to another user`
+        );
+      }
+
+      if (currentDebaterId === userId) {
+        return;
+      }
+
+      if (session.status !== "CREATED") {
+        throw new Error(
+          `Cannot reassign debater when debate is ${session.status}`
+        );
+      }
+
+      const otherPositionId =
+        position === "A" ? session.debaterBId : session.debaterAId;
+      if (otherPositionId === userId) {
+        throw new Error("User cannot be assigned to both positions");
+      }
+
+      const updateData: any = {};
+      if (position === "A") {
+        updateData.debaterAId = userId;
+      } else {
+        updateData.debaterBId = userId;
+      }
+
+      await prisma.debateSession.update({
+        where: { id: sessionId },
+        data: updateData,
+      });
+
+      const updatedState = await this.loadSessionState(sessionId);
+      if (updatedState) {
+        await this.broadcastToSession(sessionId, {
+          type: "SESSION_STATE",
+          data: updatedState,
+        } as any);
+      }
+    } catch (error) {
+      logger.error("Failed to assign debater", {
         sessionId,
-        orderIndex,
-        speaker,
+        position,
+        userId,
         error,
       });
       throw error;
     }
   }
 
+  async getInvitationLink(
+    sessionId: string
+  ): Promise<{ inviteToken: string; inviteUrl: string } | null> {
+    try {
+      const sessionExists = await prisma.debateSession.findUnique({
+        where: { id: sessionId },
+        select: { id: true },
+      });
+
+      if (!sessionExists) {
+        return null;
+      }
+
+      let session;
+      try {
+        session = await prisma.debateSession.findUnique({
+          where: { id: sessionId },
+          select: { inviteToken: true, inviteTokenExpiresAt: true },
+        });
+      } catch (error: any) {
+        if (error.message?.includes("inviteToken") || error.code === "P2021") {
+          throw new Error(
+            "Database migration required. Please run: pnpm db:migrate"
+          );
+        }
+        throw error;
+      }
+
+      if (!session) {
+        return null;
+      }
+
+      const needsNewToken =
+        !session.inviteToken ||
+        (session.inviteTokenExpiresAt &&
+          new Date() > session.inviteTokenExpiresAt);
+
+      if (needsNewToken) {
+        const newToken = this.generateInviteToken();
+        const newExpiresAt = new Date();
+        newExpiresAt.setDate(newExpiresAt.getDate() + 7);
+
+        await prisma.debateSession.update({
+          where: { id: sessionId },
+          data: {
+            inviteToken: newToken,
+            inviteTokenExpiresAt: newExpiresAt,
+          },
+        });
+
+        return {
+          inviteToken: newToken,
+          inviteUrl: `/debate/${sessionId}?invite=${newToken}`,
+        };
+      }
+
+      if (!session.inviteToken) {
+        const newToken = this.generateInviteToken();
+        const newExpiresAt = new Date();
+        newExpiresAt.setDate(newExpiresAt.getDate() + 7);
+
+        await prisma.debateSession.update({
+          where: { id: sessionId },
+          data: {
+            inviteToken: newToken,
+            inviteTokenExpiresAt: newExpiresAt,
+          },
+        });
+
+        return {
+          inviteToken: newToken,
+          inviteUrl: `/debate/${sessionId}?invite=${newToken}`,
+        };
+      }
+
+      return {
+        inviteToken: session.inviteToken,
+        inviteUrl: `/debate/${sessionId}?invite=${session.inviteToken}`,
+      };
+    } catch (error) {
+      logger.error("Failed to get invitation link", { sessionId, error });
+      throw error;
+    }
+  }
+
+  async acceptInvitation(
+    sessionId: string,
+    token: string,
+    userId: string
+  ): Promise<boolean> {
+    try {
+      const session = await prisma.debateSession.findUnique({
+        where: { id: sessionId },
+        select: {
+          inviteToken: true,
+          inviteTokenExpiresAt: true,
+          debaterAId: true,
+          debaterBId: true,
+          status: true,
+        },
+      });
+
+      if (!session) {
+        return false;
+      }
+
+      if (session.inviteToken !== token) {
+        return false;
+      }
+
+      if (
+        session.inviteTokenExpiresAt &&
+        new Date() > session.inviteTokenExpiresAt
+      ) {
+        return false;
+      }
+
+      if (session.debaterBId) {
+        return false;
+      }
+
+      if (session.debaterAId === userId) {
+        return false;
+      }
+
+      await this.assignDebater(sessionId, "B", userId);
+
+      const updatedState = await this.loadSessionState(sessionId);
+      if (
+        updatedState &&
+        updatedState.status === "CREATED" &&
+        updatedState.debaterAId &&
+        updatedState.debaterBId
+      ) {
+        try {
+          await this.startDebate(sessionId);
+        } catch (error) {
+          logger.error(
+            "Failed to auto-start debate after invitation acceptance",
+            {
+              sessionId,
+              error,
+            }
+          );
+        }
+      }
+
+      return true;
+    } catch (error) {
+      logger.error("Failed to accept invitation", {
+        sessionId,
+        token,
+        userId,
+        error,
+      });
+      return false;
+    }
+  }
+
   private async startJudging(sessionId: string): Promise<void> {
-    logger.info("Starting judging phase", { sessionId });
+    if (this.judgingInProgress.has(sessionId)) {
+      return;
+    }
 
     try {
-      // Update status to JUDGING
       await prisma.debateSession.update({
         where: { id: sessionId },
         data: { status: "JUDGING" },
@@ -241,25 +582,136 @@ export class DebateOrchestrator {
       const state = await this.loadSessionState(sessionId);
       if (!state) throw new Error("Session not found");
 
-      if (state.autoJudge) {
-        await this.autoJudgeDebate(sessionId);
+      if (state.winner) {
+        return;
       }
-      // If not auto-judge, wait for user input via WebSocket
+
+      this.judgingInProgress.add(sessionId);
+
+      this.autoJudgeDebate(sessionId)
+        .catch(async (error) => {
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
+          logger.error(`Auto-judging failed for ${sessionId}:`, errorMessage);
+
+          try {
+            const currentState = await prisma.debateSession.findUnique({
+              where: { id: sessionId },
+              select: { status: true },
+            });
+
+            if (currentState && currentState.status !== "FAILED") {
+              await prisma.debateSession.update({
+                where: { id: sessionId },
+                data: {
+                  status: "FAILED",
+                  judgeJSON: {
+                    error: errorMessage,
+                    timestamp: new Date().toISOString(),
+                  },
+                },
+              });
+              await this.broadcastToSession(sessionId, {
+                type: "ERROR",
+                message: "AI judging failed. Please retry judging.",
+              } as any);
+              const failedState = await this.loadSessionState(sessionId);
+              if (failedState) {
+                await this.broadcastToSession(sessionId, {
+                  type: "SESSION_STATE",
+                  data: failedState,
+                } as any);
+              }
+            }
+          } catch (updateError) {
+            logger.error(
+              `Failed to mark debate ${sessionId} as failed:`,
+              updateError
+            );
+          }
+        })
+        .finally(() => {
+          this.judgingInProgress.delete(sessionId);
+        });
     } catch (error) {
-      logger.error("Judging failed", { sessionId, error });
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.error(`Judging failed for ${sessionId}:`, errorMessage);
+      try {
+        await prisma.debateSession.update({
+          where: { id: sessionId },
+          data: {
+            status: "FAILED",
+            judgeJSON: {
+              error: errorMessage,
+              timestamp: new Date().toISOString(),
+            },
+          },
+        });
+      } catch (updateError) {
+        logger.error(
+          `Failed to mark debate ${sessionId} as failed:`,
+          updateError
+        );
+      }
       throw error;
     }
   }
 
   async autoJudgeDebate(sessionId: string): Promise<void> {
-    logger.info("Auto-judging debate", { sessionId });
-
     try {
+      const currentSession = await prisma.debateSession.findUnique({
+        where: { id: sessionId },
+        select: { status: true, winner: true },
+      });
+
+      if (!currentSession) {
+        throw new Error("Session not found");
+      }
+
+      if (
+        currentSession.status === "FAILED" ||
+        currentSession.status !== "JUDGING" ||
+        currentSession.winner
+      ) {
+        return;
+      }
+
       const state = await this.loadSessionState(sessionId);
-      if (!state) throw new Error("Session not found");
+      if (!state) {
+        throw new Error("Session not found");
+      }
+
+      if (state.winner) {
+        return;
+      }
 
       const transcript = this.buildTranscript(state);
+
+      logger.info(`Calling LLM judgeDebate for session ${sessionId}`, {
+        topic: state.topic,
+        transcriptLength: transcript.length,
+        turnCount: state.turns.length,
+      });
+
       const judgeResult = await llmService.judgeDebate(state.topic, transcript);
+
+      logger.info(`LLM judgeDebate completed for session ${sessionId}`, {
+        winner: judgeResult.winner,
+        tokensIn: judgeResult.tokensIn,
+        tokensOut: judgeResult.tokensOut,
+        durationMs: judgeResult.durationMs,
+      });
+
+      if (
+        !judgeResult.winner ||
+        !["A", "B", "TIE"].includes(judgeResult.winner)
+      ) {
+        throw new Error(`Invalid winner value: ${judgeResult.winner}`);
+      }
+      if (!judgeResult.judgeJSON) {
+        throw new Error("Judge JSON is missing");
+      }
 
       await this.saveJudgeResult(
         sessionId,
@@ -267,39 +719,173 @@ export class DebateOrchestrator {
         judgeResult.judgeJSON
       );
 
-      // Broadcast winner
+      const finishedState = await this.loadSessionState(sessionId);
+
       await this.broadcastToSession(sessionId, {
         type: "WINNER",
         winner: judgeResult.winner,
         judgeJSON: judgeResult.judgeJSON,
       });
+
+      if (finishedState) {
+        await this.broadcastToSession(sessionId, {
+          type: "SESSION_STATE",
+          data: finishedState,
+        } as any);
+      }
     } catch (error) {
-      logger.error("Auto-judging failed", { sessionId, error });
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.error(
+        `Auto-judging failed for session ${sessionId}:`,
+        errorMessage
+      );
       throw error;
     }
   }
 
-  async userJudgeDebate(
-    sessionId: string,
-    winner: "A" | "B" | "TIE"
-  ): Promise<void> {
-    logger.info("User judging debate", { sessionId, winner });
-
+  async retryJudging(sessionId: string): Promise<void> {
     try {
-      await this.saveJudgeResult(sessionId, winner, {
-        winner,
-        method: "user",
-        timestamp: new Date().toISOString(),
+      const state = await this.loadSessionState(sessionId);
+      if (!state) {
+        throw new Error("Session not found");
+      }
+
+      if (state.status !== "FAILED") {
+        throw new Error("Debate is not in FAILED status");
+      }
+
+      const currentTurnCount = state.turns.length;
+      const totalTurns = state.rounds * 2;
+      if (currentTurnCount < totalTurns) {
+        throw new Error("Debate rounds are not complete");
+      }
+
+      if (this.judgingInProgress.has(sessionId)) {
+        throw new Error("Judging is already in progress for this debate");
+      }
+
+      await prisma.debateSession.update({
+        where: { id: sessionId },
+        data: {
+          status: "JUDGING",
+          winner: null,
+          judgeJSON: undefined,
+        },
       });
 
-      // Broadcast winner
-      await this.broadcastToSession(sessionId, {
-        type: "WINNER",
-        winner,
-        judgeJSON: { winner, method: "user" },
-      });
+      this.judgingInProgress.add(sessionId);
+
+      this.autoJudgeDebate(sessionId)
+        .catch(async (error) => {
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
+          logger.error(
+            `Retry auto-judging failed for ${sessionId}:`,
+            errorMessage
+          );
+
+          try {
+            await prisma.debateSession.update({
+              where: { id: sessionId },
+              data: {
+                status: "FAILED",
+                judgeJSON: {
+                  error: errorMessage,
+                  timestamp: new Date().toISOString(),
+                },
+              },
+            });
+            await this.broadcastToSession(sessionId, {
+              type: "ERROR",
+              message: "AI judging failed. Please retry judging.",
+            } as any);
+            const failedState = await this.loadSessionState(sessionId);
+            if (failedState) {
+              await this.broadcastToSession(sessionId, {
+                type: "SESSION_STATE",
+                data: failedState,
+              } as any);
+            }
+          } catch (updateError) {
+            logger.error(
+              `Failed to mark debate ${sessionId} as failed after retry:`,
+              updateError
+            );
+          }
+        })
+        .finally(() => {
+          this.judgingInProgress.delete(sessionId);
+        });
     } catch (error) {
-      logger.error("User judging failed", { sessionId, winner, error });
+      logger.error(`Failed to retry judging for ${sessionId}:`, error);
+      this.judgingInProgress.delete(sessionId);
+      throw error;
+    }
+  }
+
+  async recoverPendingTurns(): Promise<void> {
+    try {
+      const runningDebates = await prisma.debateSession.findMany({
+        where: { status: "RUNNING" },
+        include: {
+          turns: {
+            orderBy: { orderIndex: "asc" },
+          },
+        },
+      });
+
+      logger.info("Recovering pending turns", {
+        count: runningDebates.length,
+      });
+
+      for (const debate of runningDebates) {
+        try {
+          const currentTurnCount = debate.turns.length;
+          const totalTurns = debate.rounds * 2;
+
+          if (currentTurnCount >= totalTurns) {
+            await this.startJudging(debate.id);
+            continue;
+          }
+
+          const expectedOrderIndex = currentTurnCount;
+          const currentSpeaker: "A" | "B" =
+            expectedOrderIndex % 2 === 0 ? "A" : "B";
+
+          const existingTurn = await prisma.debateTurn.findFirst({
+            where: {
+              sessionId: debate.id,
+              orderIndex: expectedOrderIndex,
+            },
+          });
+
+          if (existingTurn) {
+            await this.initiateNextTurn(debate.id);
+            continue;
+          }
+
+          this.pendingTurns.set(debate.id, {
+            orderIndex: expectedOrderIndex,
+            speaker: currentSpeaker,
+          });
+
+          await this.broadcastToSession(debate.id, {
+            type: "YOUR_TURN",
+            speaker: currentSpeaker,
+            orderIndex: expectedOrderIndex,
+          });
+        } catch (error) {
+          logger.error("Failed to recover pending turn for debate", {
+            sessionId: debate.id,
+            error,
+          });
+        }
+      }
+
+      logger.info("Pending turns recovery completed");
+    } catch (error) {
+      logger.error("Failed to recover pending turns", { error });
       throw error;
     }
   }
@@ -321,54 +907,11 @@ export class DebateOrchestrator {
     logger.info("Debate finished", { sessionId, winner });
   }
 
-  private async markDebateFailed(sessionId: string, error: any): Promise<void> {
-    await prisma.debateSession.update({
-      where: { id: sessionId },
-      data: {
-        status: "FAILED",
-        judgeJSON: {
-          error: error.message,
-          timestamp: new Date().toISOString(),
-        },
-      },
-    });
-
-    await this.broadcastToSession(sessionId, {
-      type: "ERROR",
-      message: "Debate failed to complete",
-    });
-  }
-
-  private buildDebatePrompt(
-    state: SessionState,
-    speaker: "A" | "B",
-    orderIndex: number
-  ): string {
-    const persona = speaker === "A" ? state.personaA : state.personaB;
-
-    // Build turns history
-    const turnsFormatted = state.turns
-      .filter((turn) => turn.orderIndex < orderIndex)
-      .map((turn) => {
-        const speakerName =
-          turn.speaker === "A" ? state.personaA.name : state.personaB.name;
-        return `${speakerName}: ${turn.response}`;
-      })
-      .join("\n\n");
-
-    const turnsSection = turnsFormatted
-      ? `\nDebate so far:\n${turnsFormatted}\n`
-      : "\n";
-
-    return `Topic: "${state.topic}"${turnsSection}
-It's your turn as ${persona.name}. Provide your next argument or rebuttal.`;
-  }
-
   private buildTranscript(state: SessionState): string {
     return state.turns
       .map((turn) => {
         const speakerName =
-          turn.speaker === "A" ? state.personaA.name : state.personaB.name;
+          turn.speaker === "A" ? state.debaterAName : state.debaterBName;
         return `${speakerName}: ${turn.response}`;
       })
       .join("\n\n");

@@ -98,11 +98,13 @@ export class DebateWebSocketServer {
   ): Promise<void> {
     const url = parseUrl(req.url || "", true);
     const sessionId = url.query.sessionId as string;
+    const userId = url.query.userId as string | undefined;
 
     ws.sessionId = sessionId;
+    ws.userId = userId;
     ws.isAlive = true;
 
-    // Add client to session group
+    // Add client to session group early to ensure proper registration
     if (!this.clients.has(sessionId)) {
       this.clients.set(sessionId, new Set());
     }
@@ -110,22 +112,55 @@ export class DebateWebSocketServer {
 
     logger.info("WebSocket client connected", {
       sessionId,
-      clientCount: this.clients.get(sessionId)!.size,
+      userId,
+      clientCount: this.clients.get(sessionId)?.size || 0,
     });
 
-    // Send current session state
+    // Load session state and handle debater assignment
     try {
       const sessionState = await debateOrchestrator.loadSessionState(sessionId);
-      if (sessionState) {
+      if (!sessionState) {
         this.sendToClient(ws, {
+          type: "ERROR",
+          message: "Debate session not found",
+        } as ServerMessage);
+        ws.close(1008, "Session not found");
+        // Remove client from session group on error
+        this.clients.get(sessionId)?.delete(ws);
+        if (this.clients.get(sessionId)?.size === 0) {
+          this.clients.delete(sessionId);
+        }
+        return;
+      }
+
+      // If user is authenticated, try to assign them as a debater
+      if (userId) {
+        await this.handleDebaterAssignment(sessionId, userId, sessionState);
+      }
+
+      // Reload session state after assignment (in case it changed)
+      const updatedState = await debateOrchestrator.loadSessionState(sessionId);
+      if (updatedState) {
+        // Broadcast updated session state to all clients in this session
+        this.broadcastToSession(sessionId, {
           type: "SESSION_STATE",
-          data: sessionState,
+          data: updatedState,
         } as ServerMessage);
 
-        // Auto-start debate if it's newly created and not yet running
-        if (sessionState.status === "CREATED") {
-          logger.info("Auto-starting debate on first connection", { sessionId });
+        // Auto-start debate if both debaters are assigned and debate is in CREATED status
+        // Note: startDebate now has its own lock mechanism, so we don't need to double-check here
+        if (
+          updatedState.status === "CREATED" &&
+          updatedState.debaterAId &&
+          updatedState.debaterBId
+        ) {
+          logger.info("Both debaters assigned, auto-starting debate", {
+            sessionId,
+            debaterAId: updatedState.debaterAId,
+            debaterBId: updatedState.debaterBId,
+          });
           try {
+            // startDebate has its own lock mechanism and atomic status check
             await debateOrchestrator.startDebate(sessionId);
           } catch (error) {
             logger.error("Failed to auto-start debate", { sessionId, error });
@@ -133,7 +168,13 @@ export class DebateWebSocketServer {
         }
       }
     } catch (error) {
-      logger.error("Failed to send session state", { sessionId, error });
+      logger.error("Failed to handle connection", { sessionId, userId, error });
+      this.sendToClient(ws, {
+        type: "ERROR",
+        message: "Failed to initialize connection",
+      } as ServerMessage);
+      // Ensure client is still registered even if there's an error
+      // (they might still be able to receive updates)
     }
 
     // Handle incoming messages
@@ -179,8 +220,8 @@ export class DebateWebSocketServer {
           await this.handleRequestState(ws, message.sessionId);
           break;
 
-        case "USER_JUDGE":
-          await this.handleUserJudge(ws, message.sessionId, message.winner);
+        case "SUBMIT_ARGUMENT":
+          await this.handleSubmitArgument(ws, message.sessionId, message.argument);
           break;
 
         case "PING":
@@ -221,10 +262,101 @@ export class DebateWebSocketServer {
       this.clients.get(sessionId)!.add(ws);
     }
 
-    // Start debate if it's in CREATED status
+    // Load session state and handle debater assignment
     const sessionState = await debateOrchestrator.loadSessionState(sessionId);
-    if (sessionState?.status === "CREATED") {
-      await debateOrchestrator.startDebate(sessionId);
+    if (sessionState && ws.userId) {
+      await this.handleDebaterAssignment(sessionId, ws.userId, sessionState);
+
+      // Reload and broadcast updated state
+      const updatedState = await debateOrchestrator.loadSessionState(sessionId);
+      if (updatedState) {
+        // Broadcast to all clients
+        this.broadcastToSession(sessionId, {
+          type: "SESSION_STATE",
+          data: updatedState,
+        } as ServerMessage);
+
+        // Check if we should auto-start (with race condition protection)
+        if (
+          updatedState.status === "CREATED" &&
+          updatedState.debaterAId &&
+          updatedState.debaterBId
+        ) {
+          try {
+            // Double-check status hasn't changed (race condition protection)
+            const verifyState = await debateOrchestrator.loadSessionState(sessionId);
+            if (verifyState?.status === "CREATED") {
+              await debateOrchestrator.startDebate(sessionId);
+            } else {
+              logger.info("Debate status changed before auto-start in handleJoinSession, skipping", {
+                sessionId,
+                status: verifyState?.status,
+              });
+            }
+          } catch (error) {
+            logger.error("Failed to auto-start debate in handleJoinSession", { sessionId, error });
+          }
+        }
+      }
+    } else if (sessionState) {
+      // If no userId but session exists, just send state
+      this.sendToClient(ws, {
+        type: "SESSION_STATE",
+        data: sessionState,
+      } as ServerMessage);
+    }
+  }
+
+  private async handleDebaterAssignment(
+    sessionId: string,
+    userId: string,
+    sessionState: any
+  ): Promise<void> {
+    try {
+      // If user is already assigned as debater A or B, do nothing
+      if (
+        sessionState.debaterAId === userId ||
+        sessionState.debaterBId === userId
+      ) {
+        logger.info("User already assigned to debate", {
+          sessionId,
+          userId,
+          debaterAId: sessionState.debaterAId,
+          debaterBId: sessionState.debaterBId,
+        });
+        return;
+      }
+
+      // If debater A is not assigned, assign this user as debater A (creator)
+      if (!sessionState.debaterAId) {
+        logger.info("Assigning user as debater A", { sessionId, userId });
+        await debateOrchestrator.assignDebater(sessionId, "A", userId);
+        return;
+      }
+
+      // Debater B assignment should only happen via invitation token (handled via API)
+      // If user is not assigned and debater B slot is open, they need an invitation
+      if (sessionState.debaterAId && !sessionState.debaterBId) {
+        if (sessionState.debaterAId !== userId) {
+          logger.info("Debater B slot is open but user needs invitation token", {
+            sessionId,
+            userId,
+          });
+          // Don't auto-assign - user must use invitation link
+          return;
+        }
+      }
+
+      // Both debaters are already assigned, user is neither
+      logger.info("Debate already has both debaters assigned or user needs invitation", {
+        sessionId,
+        userId,
+        debaterAId: sessionState.debaterAId,
+        debaterBId: sessionState.debaterBId,
+      });
+    } catch (error) {
+      logger.error("Failed to assign debater", { sessionId, userId, error });
+      throw error;
     }
   }
 
@@ -245,22 +377,26 @@ export class DebateWebSocketServer {
     }
   }
 
-  private async handleUserJudge(
+  private async handleSubmitArgument(
     ws: AuthenticatedWebSocket,
     sessionId: string,
-    winner: "A" | "B" | "TIE"
+    argument: string
   ): Promise<void> {
     try {
-      await debateOrchestrator.userJudgeDebate(sessionId, winner);
-    } catch (error) {
-      logger.error("Failed to process user judge", {
+      const userId = ws.userId;
+      if (!userId) {
+        throw new Error("User not authenticated");
+      }
+
+      await debateOrchestrator.submitArgument(sessionId, userId, argument);
+    } catch (error: any) {
+      logger.error("Failed to submit argument", {
         sessionId,
-        winner,
         error,
       });
       this.sendToClient(ws, {
         type: "ERROR",
-        message: "Failed to process judgment",
+        message: error.message || "Failed to submit argument",
       } as ServerMessage);
     }
   }

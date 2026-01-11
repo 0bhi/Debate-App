@@ -3,7 +3,6 @@ import { subscribeWithSelector } from "zustand/middleware";
 import {
   SessionState,
   CreateDebateRequest,
-  Persona,
   ServerMessage,
 } from "@repo/types";
 import { DebateWebSocketClient } from "../ws-client";
@@ -20,13 +19,15 @@ interface DebateStore {
     isStreaming: boolean;
   };
   error: string | null;
+  isRetryingJudging: boolean; // Track if retry is in progress
 
   // Actions
-  createDebate: (request: CreateDebateRequest) => Promise<string>;
+  createDebate: (request: CreateDebateRequest, userId?: string) => Promise<string>;
   loadDebate: (sessionId: string) => Promise<void>;
-  connectWebSocket: (sessionId: string) => Promise<void>;
+  connectWebSocket: (sessionId: string, userId?: string) => Promise<void>;
   disconnectWebSocket: () => void;
-  judgeDebate: (winner: "A" | "B" | "TIE") => void;
+  submitArgument: (sessionId: string, argument: string) => Promise<void>;
+  retryJudging: (sessionId: string) => Promise<void>;
   clearError: () => void;
 
   // Internal
@@ -51,15 +52,16 @@ export const useDebateStore = create<DebateStore>()(
         isStreaming: false,
       },
       error: null,
+      isRetryingJudging: false,
 
       // Actions
-      createDebate: async (request: CreateDebateRequest) => {
+      createDebate: async (request: CreateDebateRequest, userId?: string) => {
         try {
           set({ error: null });
           const result = await apiClient.createDebate(request);
 
           // Auto-connect to WebSocket after creating debate
-          await get().connectWebSocket(result.id);
+          await get().connectWebSocket(result.id, userId);
 
           return result.id;
         } catch (error) {
@@ -83,16 +85,22 @@ export const useDebateStore = create<DebateStore>()(
         }
       },
 
-      connectWebSocket: async (sessionId: string) => {
+      connectWebSocket: async (sessionId: string, userId?: string) => {
         try {
           const { wsClient } = get();
 
-          // Disconnect existing connection
+          // Only disconnect if we're connected to a different session or not connected at all
           if (wsClient) {
+            // Check if already connected to the same session
+            if (wsClient.isConnected() && wsClient.getSessionId() === sessionId) {
+              // Already connected to the same session, no need to reconnect
+              return;
+            }
+            // Disconnect existing connection to different session or closed connection
             wsClient.disconnect();
           }
 
-          const newClient = new DebateWebSocketClient(sessionId);
+          const newClient = new DebateWebSocketClient(sessionId, userId);
 
           // Set up event handlers
           newClient.on("*", get().handleWebSocketMessage);
@@ -123,10 +131,44 @@ export const useDebateStore = create<DebateStore>()(
         }
       },
 
-      judgeDebate: (winner: "A" | "B" | "TIE") => {
-        const { wsClient, sessionState } = get();
-        if (wsClient && sessionState) {
-          wsClient.judgeDebate(winner);
+      submitArgument: async (sessionId: string, argument: string) => {
+        const { wsClient } = get();
+        if (wsClient) {
+          wsClient.submitArgument(argument);
+        } else {
+          throw new Error("WebSocket not connected");
+        }
+      },
+
+      retryJudging: async (sessionId: string) => {
+        const { isRetryingJudging } = get();
+        
+        // Prevent duplicate retry calls
+        if (isRetryingJudging) {
+          console.log("Retry judging already in progress, skipping duplicate call");
+          return;
+        }
+
+        try {
+          set({ error: null, isRetryingJudging: true });
+          console.log(`[Retry Judging] Starting retry for session ${sessionId}`);
+          
+          await apiClient.retryJudging(sessionId);
+          
+          console.log(`[Retry Judging] Retry API call completed for session ${sessionId}`);
+          // Don't call loadDebate here - WebSocket will broadcast the updated state
+          // This prevents unnecessary API calls
+        } catch (error) {
+          const errorMessage =
+            error instanceof Error ? error.message : "Failed to retry judging";
+          console.error(`[Retry Judging] Error for session ${sessionId}:`, errorMessage);
+          set({ error: errorMessage });
+          throw error;
+        } finally {
+          // Reset retry flag after a short delay to allow for any pending operations
+          setTimeout(() => {
+            set({ isRetryingJudging: false });
+          }, 1000);
         }
       },
 
@@ -143,30 +185,66 @@ export const useDebateStore = create<DebateStore>()(
         switch (message.type) {
           case "SESSION_STATE": {
             const incoming = message.data as SessionState;
-            // Only update if turns changed (length or last turn id)
+            // Update if turns changed, status changed, winner changed, or debater assignment changed
             set((state) => {
               const prev = state.sessionState;
-              const prevLen = prev?.turns.length ?? 0;
+              if (!prev) {
+                // No previous state, always update
+                return {
+                  ...state,
+                  sessionState: {
+                    ...incoming,
+                    turns: [...incoming.turns].sort(
+                      (a, b) => a.orderIndex - b.orderIndex
+                    ),
+                  },
+                };
+              }
+
+              const prevLen = prev.turns.length ?? 0;
               const newLen = incoming.turns.length;
-              const prevLastId = prev?.turns[prevLen - 1]?.id;
+              const prevLastId = prev.turns[prevLen - 1]?.id;
               const newLastId = incoming.turns[newLen - 1]?.id;
 
               const turnsChanged =
                 prevLen !== newLen || (prevLen > 0 && prevLastId !== newLastId);
+              const statusChanged = prev.status !== incoming.status;
+              const winnerChanged = prev.winner !== incoming.winner;
+              const debaterAChanged = prev.debaterAId !== incoming.debaterAId;
+              const debaterBChanged = prev.debaterBId !== incoming.debaterBId;
 
-              if (!turnsChanged) {
-                return state; // no-op to avoid re-render
+              // Update if any significant change occurred
+              if (
+                turnsChanged ||
+                statusChanged ||
+                winnerChanged ||
+                debaterAChanged ||
+                debaterBChanged
+              ) {
+                return {
+                  ...state,
+                  sessionState: {
+                    ...incoming,
+                    turns: [...incoming.turns].sort(
+                      (a, b) => a.orderIndex - b.orderIndex
+                    ),
+                  },
+                };
               }
 
-              return {
-                ...state,
-                sessionState: {
-                  ...incoming,
-                  turns: [...incoming.turns].sort(
-                    (a, b) => a.orderIndex - b.orderIndex
-                  ),
-                },
-              };
+              return state; // no-op to avoid re-render
+            });
+            break;
+          }
+
+          case "YOUR_TURN": {
+            // It's the user's turn to submit an argument
+            set({
+              currentTurn: {
+                speaker: message.speaker,
+                text: "",
+                isStreaming: false,
+              },
             });
             break;
           }
@@ -210,7 +288,7 @@ export const useDebateStore = create<DebateStore>()(
           }
 
           case "WINNER":
-            // Update session state with winner
+            // Update session state with winner immediately for responsive UI
             if (sessionState) {
               set({
                 sessionState: {
@@ -220,6 +298,14 @@ export const useDebateStore = create<DebateStore>()(
                   status: "FINISHED" as any,
                 },
               });
+              
+              // Reload from database after a short delay to ensure consistency
+              if (reloadTimer) clearTimeout(reloadTimer);
+              reloadTimer = setTimeout(() => {
+                get()
+                  .loadDebate(sessionState.id)
+                  .catch(() => {});
+              }, 300);
             }
             break;
 
@@ -241,35 +327,3 @@ export const useDebateStore = create<DebateStore>()(
     };
   })
 );
-
-// Preset personas for easy selection
-export const PRESET_PERSONAS: Record<string, Persona> = {
-  "steve-jobs": {
-    name: "Steve Jobs",
-    bio: "Co-founder and former CEO of Apple Inc. Known for revolutionary thinking, minimalist design philosophy, and transforming multiple industries including personal computing, animated movies, music, phones, tablet computing, and digital publishing.",
-    style:
-      "Passionate, direct, and uncompromising. Focuses on user experience and elegant simplicity. Uses reality distortion field to push boundaries.",
-    voice: "steve-jobs",
-  },
-  "elon-musk": {
-    name: "Elon Musk",
-    bio: "CEO of Tesla and SpaceX, founder of multiple companies. Visionary entrepreneur focused on sustainable energy, space exploration, and advancing human civilization. Known for bold predictions and ambitious timelines.",
-    style:
-      "Visionary, occasionally sarcastic, data-driven. References first principles thinking and long-term species survival. Unafraid of controversial positions.",
-    voice: "elon-musk",
-  },
-  "warren-buffett": {
-    name: "Warren Buffett",
-    bio: 'Chairman and CEO of Berkshire Hathaway, legendary investor. Known as the "Oracle of Omaha" for his investing acumen and folksy wisdom about business and life.',
-    style:
-      "Folksy, wise, uses simple analogies. Focuses on long-term value and practical common sense. Often references his experiences in Omaha.",
-    voice: "calm",
-  },
-  "oprah-winfrey": {
-    name: "Oprah Winfrey",
-    bio: "Media executive, actress, talk show host, television producer, and philanthropist. Known for her empathetic interviewing style and focus on personal growth and social issues.",
-    style:
-      "Empathetic, inspiring, focuses on human stories and personal growth. Asks probing questions about deeper meaning and impact on people.",
-    voice: "energetic",
-  },
-};

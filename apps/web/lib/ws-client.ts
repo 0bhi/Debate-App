@@ -9,29 +9,66 @@ export class DebateWebSocketClient {
   private ws: WebSocket | null = null;
   private url: string;
   private sessionId: string;
+  private userId?: string;
   private eventHandlers = new Map<string, Set<WSEventHandler>>();
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private reconnectDelay = 1000; // Start with 1 second
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private isManualDisconnect = false; // Track manual disconnects to prevent reconnection
 
-  constructor(sessionId: string, baseUrl?: string) {
+  constructor(sessionId: string, userId?: string, baseUrl?: string) {
     this.sessionId = sessionId;
+    this.userId = userId;
     const resolvedBaseUrl =
       baseUrl ||
       (process.env.NEXT_PUBLIC_WS_URL as string) ||
       "ws://localhost:3001";
-    this.url = `${resolvedBaseUrl}?sessionId=${sessionId}`;
+    const params = new URLSearchParams({ sessionId });
+    if (userId) {
+      params.append("userId", userId);
+    }
+    this.url = `${resolvedBaseUrl}?${params.toString()}`;
   }
 
   connect(): Promise<void> {
     return new Promise((resolve, reject) => {
+      // Prevent duplicate connection attempts
+      if (this.ws) {
+        if (this.ws.readyState === WebSocket.CONNECTING) {
+          // Already connecting, wait for it
+          const checkConnection = setInterval(() => {
+            if (this.ws?.readyState === WebSocket.OPEN) {
+              clearInterval(checkConnection);
+              resolve();
+            } else if (this.ws?.readyState === WebSocket.CLOSED) {
+              clearInterval(checkConnection);
+              reject(new Error("Connection closed"));
+            }
+          }, 100);
+          return;
+        } else if (this.ws.readyState === WebSocket.OPEN) {
+          // Already connected
+          resolve();
+          return;
+        }
+      }
+
       try {
         this.ws = new WebSocket(this.url);
+        this.isManualDisconnect = false; // Reset flag on new connection attempt
 
         this.ws.onopen = () => {
           console.log("WebSocket connected");
           this.reconnectAttempts = 0;
           this.reconnectDelay = 1000;
+          this.isManualDisconnect = false;
+
+          // Clear any pending reconnect timer
+          if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = null;
+          }
 
           // Join the session
           this.send({
@@ -53,12 +90,26 @@ export class DebateWebSocketClient {
 
         this.ws.onclose = (event) => {
           console.log("WebSocket disconnected:", event.code, event.reason);
-          this.handleDisconnect();
+          this.ws = null; // Clear reference
+          
+          // Only attempt reconnection if it wasn't a manual disconnect
+          if (!this.isManualDisconnect) {
+            this.handleDisconnect();
+          }
         };
 
         this.ws.onerror = (error) => {
           console.error("WebSocket error:", error);
-          reject(error);
+          // Don't reject immediately, let onclose handle reconnection
+          // Only reject if we're still in CONNECTING state
+          if (this.ws?.readyState === WebSocket.CONNECTING) {
+            // Wait a bit for the close event
+            setTimeout(() => {
+              if (!this.ws || this.ws.readyState === WebSocket.CLOSED) {
+                reject(error);
+              }
+            }, 100);
+          }
         };
       } catch (error) {
         reject(error);
@@ -81,24 +132,46 @@ export class DebateWebSocketClient {
   }
 
   private handleDisconnect(): void {
-    if (this.reconnectAttempts < this.maxReconnectAttempts) {
-      this.reconnectAttempts++;
-      console.log(
-        `Attempting to reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts})...`
-      );
+    // Don't reconnect if it was a manual disconnect
+    if (this.isManualDisconnect) {
+      return;
+    }
 
-      setTimeout(() => {
-        this.connect().catch((error) => {
-          console.error("Reconnection failed:", error);
-        });
-      }, this.reconnectDelay);
+    // Clear any existing reconnect timer
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
 
-      // Exponential backoff
-      this.reconnectDelay = Math.min(this.reconnectDelay * 2, 30000);
-    } else {
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
       console.error("Max reconnection attempts reached");
       this.emit("connection_failed", {} as ServerMessage);
+      return;
     }
+
+    this.reconnectAttempts++;
+    console.log(
+      `Attempting to reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts})...`
+    );
+
+    this.reconnectTimer = setTimeout(() => {
+      // Rebuild URL with userId for reconnection
+      const resolvedBaseUrl =
+        (process.env.NEXT_PUBLIC_WS_URL as string) ||
+        "ws://localhost:3001";
+      const params = new URLSearchParams({ sessionId: this.sessionId });
+      if (this.userId) {
+        params.append("userId", this.userId);
+      }
+      this.url = `${resolvedBaseUrl}?${params.toString()}`;
+      
+      this.connect().catch((error) => {
+        console.error("Reconnection failed:", error);
+      });
+    }, this.reconnectDelay);
+
+    // Exponential backoff
+    this.reconnectDelay = Math.min(this.reconnectDelay * 2, 30000);
   }
 
   send(message: ClientMessage): void {
@@ -137,11 +210,11 @@ export class DebateWebSocketClient {
     });
   }
 
-  judgeDebate(winner: "A" | "B" | "TIE"): void {
+  submitArgument(argument: string): void {
     this.send({
-      type: "USER_JUDGE",
+      type: "SUBMIT_ARGUMENT",
       sessionId: this.sessionId,
-      winner,
+      argument,
     });
   }
 
@@ -150,13 +223,36 @@ export class DebateWebSocketClient {
   }
 
   disconnect(): void {
+    this.isManualDisconnect = true; // Set flag before disconnecting
+    
+    // Clear reconnect timer
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+
     if (this.ws) {
+      // Remove event listeners to prevent reconnection
+      this.ws.onclose = null;
+      this.ws.onerror = null;
       this.ws.close(1000, "Client disconnect");
       this.ws = null;
     }
+
+    // Reset reconnection state
+    this.reconnectAttempts = 0;
+    this.reconnectDelay = 1000;
   }
 
   isConnected(): boolean {
     return this.ws?.readyState === WebSocket.OPEN;
+  }
+
+  getSessionId(): string {
+    return this.sessionId;
+  }
+
+  getUserId(): string | undefined {
+    return this.userId;
   }
 }

@@ -3,7 +3,7 @@ import { parse as parseUrl } from "url";
 import { env } from "./env";
 import { debateOrchestrator } from "./orchestrator/debateOrchestrator";
 import { logger } from "./utils/logger";
-import { CreateDebateSchema, JudgeRequestSchema } from "@repo/types";
+import { CreateDebateSchema } from "@repo/types";
 
 function sendJson(res: ServerResponse, status: number, payload: any) {
   const body = JSON.stringify(payload);
@@ -53,8 +53,30 @@ export function createHttpServer() {
       if (method === "POST" && url.pathname === "/debates") {
         const body = await parseJsonBody(req);
         const validated = CreateDebateSchema.parse(body);
-        const result = await debateOrchestrator.createDebateSession(validated);
+        // Extract userId from body or use debaterAId if userId not provided
+        // This allows tracking who created the debate
+        const userId = (body as any).userId || validated.debaterAId;
+        const result = await debateOrchestrator.createDebateSession(validated, userId);
         return sendJson(res, 200, result);
+      }
+
+      // POST /debates/:id/assign
+      const assignMatch = url.pathname?.match(/^\/debates\/([^/]+)\/assign$/);
+      if (method === "POST" && assignMatch) {
+        const id = assignMatch[1]!;
+        const body = await parseJsonBody(req);
+        const position = (body as any).position; // "A" or "B"
+        const userId = (body as any).userId;
+        
+        if (!position || !["A", "B"].includes(position)) {
+          return sendJson(res, 400, { error: "Invalid position. Must be 'A' or 'B'" });
+        }
+        if (!userId) {
+          return sendJson(res, 400, { error: "userId is required" });
+        }
+
+        await debateOrchestrator.assignDebater(id, position, userId);
+        return sendJson(res, 200, { success: true });
       }
 
       // GET /debates/:id
@@ -69,22 +91,52 @@ export function createHttpServer() {
         return sendJson(res, 200, state);
       }
 
-      // POST /debates/:id/judge
-      const judgeMatch = url.pathname?.match(/^\/debates\/([^/]+)\/judge$/);
-      if (method === "POST" && judgeMatch) {
-        const id = judgeMatch[1]!; // assert non-null
-        const body = await parseJsonBody(req);
-        const validated = JudgeRequestSchema.parse(body);
-        const exists = await debateOrchestrator.loadSessionState(id);
-        if (!exists)
-          return sendJson(res, 404, { error: "Debate session not found" });
-        if (exists.status !== "JUDGING" && exists.status !== "FINISHED") {
+      // POST /debates/:id/retry-judge
+      const retryJudgeMatch = url.pathname?.match(/^\/debates\/([^/]+)\/retry-judge$/);
+      if (method === "POST" && retryJudgeMatch) {
+        const id = retryJudgeMatch[1]!; // assert non-null
+        try {
+          await debateOrchestrator.retryJudging(id);
+          return sendJson(res, 200, { success: true, message: "Judging retry initiated" });
+        } catch (error: any) {
+          logger.error("Failed to retry judging", { sessionId: id, error });
           return sendJson(res, 400, {
-            error: "Debate is not ready for judging",
+            error: error instanceof Error ? error.message : "Failed to retry judging",
           });
         }
-        await debateOrchestrator.userJudgeDebate(id, validated.winner);
-        return sendJson(res, 200, { success: true, winner: validated.winner });
+      }
+
+      // GET /debates/:id/invite
+      const inviteMatch = url.pathname?.match(/^\/debates\/([^/]+)\/invite$/);
+      if (method === "GET" && inviteMatch) {
+        const id = inviteMatch[1]!;
+        const inviteLink = await debateOrchestrator.getInvitationLink(id);
+        if (!inviteLink) {
+          return sendJson(res, 404, { error: "Debate session not found or no invitation token" });
+        }
+        return sendJson(res, 200, inviteLink);
+      }
+
+      // POST /debates/:id/accept-invitation
+      const acceptMatch = url.pathname?.match(/^\/debates\/([^/]+)\/accept-invitation$/);
+      if (method === "POST" && acceptMatch) {
+        const id = acceptMatch[1]!;
+        const body = await parseJsonBody(req);
+        const token = (body as any).token;
+        const userId = (body as any).userId;
+
+        if (!token) {
+          return sendJson(res, 400, { error: "Token is required" });
+        }
+        if (!userId) {
+          return sendJson(res, 400, { error: "userId is required" });
+        }
+
+        const success = await debateOrchestrator.acceptInvitation(id, token, userId);
+        if (!success) {
+          return sendJson(res, 400, { error: "Invalid or expired invitation token" });
+        }
+        return sendJson(res, 200, { success: true });
       }
       // ...
 

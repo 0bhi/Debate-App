@@ -2,7 +2,6 @@
 
 import { useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Volume2 } from "lucide-react";
 import { SessionState } from "@repo/types";
 import { Avatar } from "./Avatar";
 
@@ -17,7 +16,6 @@ interface TranscriptProps {
 
 export function Transcript({ sessionState, currentTurn }: TranscriptProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const audioRefs = useRef<Map<string, HTMLAudioElement>>(new Map());
 
   // Auto-scroll to bottom when new content is added
   useEffect(() => {
@@ -25,22 +23,6 @@ export function Transcript({ sessionState, currentTurn }: TranscriptProps) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [sessionState.turns, currentTurn.text]);
-
-  const playAudio = (audioUrl: string, turnId: string) => {
-    // Stop any currently playing audio
-    audioRefs.current.forEach((audio) => {
-      if (!audio.paused) {
-        audio.pause();
-        audio.currentTime = 0;
-      }
-    });
-
-    // Play the requested audio
-    const audio = audioRefs.current.get(turnId);
-    if (audio) {
-      audio.play().catch(console.error);
-    }
-  };
 
   const formatTimestamp = (date: Date | string) => {
     const dateObj = date instanceof Date ? date : new Date(date);
@@ -57,7 +39,6 @@ export function Transcript({ sessionState, currentTurn }: TranscriptProps) {
   };
 
   const MotionDiv = motion.div;
-  const MotionSpan = motion.span;
 
   return (
     <div className="flex flex-col h-full bg-white dark:bg-slate-800 rounded-lg shadow-lg">
@@ -75,10 +56,10 @@ export function Transcript({ sessionState, currentTurn }: TranscriptProps) {
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
         <AnimatePresence>
           {sessionState.turns.map((turn, index) => {
-            const persona =
+            const debaterName =
               turn.speaker === "A"
-                ? sessionState.personaA
-                : sessionState.personaB;
+                ? sessionState.debaterAName || "Debater A"
+                : sessionState.debaterBName || "Debater B";
             const isEven = index % 2 === 0;
 
             return (
@@ -94,7 +75,7 @@ export function Transcript({ sessionState, currentTurn }: TranscriptProps) {
                 >
                   <div className="flex gap-3 w-full">
                     <div className="flex-shrink-0">
-                      <Avatar persona={persona} size="sm" isActive={false} />
+                      <Avatar name={debaterName} size="sm" isActive={false} />
                     </div>
 
                     <div
@@ -129,38 +110,11 @@ export function Transcript({ sessionState, currentTurn }: TranscriptProps) {
                               {turn.response}
                             </p>
                           </div>
-
-                          <div className="flex items-center gap-2">
-                            {turn.audioUrl && (
-                              <button
-                                onClick={() =>
-                                  playAudio(turn.audioUrl!, turn.id)
-                                }
-                                className="p-1.5 rounded-full bg-white dark:bg-slate-600 shadow hover:shadow-md transition-shadow"
-                                title="Play audio"
-                              >
-                                <Volume2 className="w-4 h-4 text-slate-600 dark:text-slate-300" />
-                              </button>
-                            )}
-                          </div>
                         </div>
 
                         <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
                           {formatTimestamp(turn.createdAt)}
                         </div>
-
-                        {/* Hidden audio element */}
-                        {turn.audioUrl && (
-                          <audio
-                            ref={(el) => {
-                              if (el) {
-                                audioRefs.current.set(turn.id, el);
-                              }
-                            }}
-                            src={turn.audioUrl}
-                            preload="none"
-                          />
-                        )}
                       </div>
                     </div>
                   </div>
@@ -174,18 +128,18 @@ export function Transcript({ sessionState, currentTurn }: TranscriptProps) {
             <div className="text-center py-4">
               <div className="inline-flex items-center gap-2 px-4 py-2 bg-blue-50 dark:bg-blue-900/20 rounded-full">
                 <Avatar
-                  persona={
+                  name={
                     currentTurn.speaker === "A"
-                      ? sessionState.personaA
-                      : sessionState.personaB
+                      ? sessionState.debaterAName || "Debater A"
+                      : sessionState.debaterBName || "Debater B"
                   }
                   size="sm"
                   isActive={true}
                 />
                 <span className="text-blue-600 dark:text-blue-400 text-sm">
                   {currentTurn.speaker === "A"
-                    ? sessionState.personaA.name
-                    : sessionState.personaB.name}{" "}
+                    ? sessionState.debaterAName || "Debater A"
+                    : sessionState.debaterBName || "Debater B"}{" "}
                   is speaking...
                 </span>
                 <div className="flex gap-1">

@@ -1,16 +1,15 @@
-# 🎯 AI Debate Club
+# 🎯 Debate Platform
 
-Watch AI personas debate in real-time with streaming text, TTS audio, animated avatars, and live judging.
+A platform where two people can debate on a topic and be evaluated by an AI judge.
 
 ## ✨ Features
 
-- **Real-time AI debates** with streaming text responses
-- **Text-to-Speech** audio generation and playback
-- **Animated avatars** with speaking indicators
-- **AI or manual judging** with detailed scoring
-- **Preset personas** (Steve Jobs, Elon Musk, Warren Buffett, Oprah) or custom ones
+- **Real-time human debates** - Two users debate on a topic
+- **Turn-based system** - Each debater takes turns presenting arguments
+- **AI judging** - Automatic evaluation with detailed scoring and feedback
 - **Beautiful UI** with animations and dark mode support
 - **WebSocket communication** for real-time updates
+- **User authentication** - Sign in to create and join debates
 
 ## 🚀 Quick Start
 
@@ -18,7 +17,7 @@ Watch AI personas debate in real-time with streaming text, TTS audio, animated a
 
 - [Docker](https://docs.docker.com/get-docker/) and Docker Compose
 - [Node.js](https://nodejs.org/) (v18 or later)
-- [Yarn](https://yarnpkg.com/) package manager
+- [pnpm](https://pnpm.io/) package manager
 - [OpenAI API Key](https://platform.openai.com/api-keys)
 
 ### Setup & Run
@@ -28,7 +27,7 @@ Watch AI personas debate in real-time with streaming text, TTS audio, animated a
    ```bash
    git clone <your-repo-url>
    cd debate-app
-   cp apps/web/.env.example apps/web/.env
+   # Create .env files for both apps (see environment variables section below)
    ```
 
 2. **Configure environment variables**:
@@ -53,32 +52,33 @@ Watch AI personas debate in real-time with streaming text, TTS audio, animated a
 
 3. **Start everything**:
    ```bash
-   yarn dx
+   # From root directory
+   pnpm install              # Install dependencies
+   pnpm docker:up           # Start Docker services (PostgreSQL, Redis, MinIO)
+   pnpm db:generate         # Generate Prisma client
+   pnpm db:migrate          # Run database migrations
+   pnpm dev                 # Start web and server apps
    ```
 
-That's it! This single command will:
-
-- Start Docker services (PostgreSQL, Redis, MinIO)
-- Install dependencies
-- Setup the database
-- Start all servers and workers
+Or use individual commands as needed (see Individual Commands section below).
 
 ### Access the Application
 
 - **Web App**: http://localhost:3000
 - **MinIO Console**: http://localhost:9001 (minioadmin/minioadmin123)
 
-## 🛠️ What `yarn dx` does
+## 🛠️ Development Workflow
 
-The `dx` command handles everything automatically:
+The typical development workflow:
 
-1. 🐳 Starts **PostgreSQL** database on port 5432
-2. 🔄 Starts **Redis** server on port 6379
-3. 📦 Starts **MinIO** storage on ports 9000/9001
-4. 🗄️ Sets up database schema with Prisma
-5. 📡 Starts **WebSocket** server
-6. 🎵 Starts **TTS worker** for audio generation
-7. 🌐 Starts **Next.js** app on port 3000
+1. 🐳 Start **PostgreSQL** database on port 5432 (via `pnpm docker:up`)
+2. 🔄 Start **Redis** server on port 6379 (via `pnpm docker:up`)
+3. 📦 Start **MinIO** storage on ports 9000/9001 (via `pnpm docker:up`)
+4. 🗄️ Setup database schema with Prisma (`pnpm db:generate && pnpm db:migrate`)
+5. 📡 Start **WebSocket** server (`cd apps/server && pnpm dev`)
+6. 🌐 Start **Next.js** app on port 3000 (`cd apps/web && pnpm dev`)
+
+**Note**: `docker-compose.yml` is at the root because both `web` and `server` apps share the same infrastructure (PostgreSQL, Redis, MinIO).
 
 ## 🏗️ Architecture
 
@@ -100,9 +100,8 @@ The `dx` command handles everything automatically:
 - **Frontend**: Next.js 14, React 18, TailwindCSS, Zustand
 - **Backend**: Next.js API Routes, TypeScript, WebSocket
 - **Database**: PostgreSQL with Prisma ORM
-- **Cache/PubSub**: Redis with BullMQ for job queues
-- **Storage**: MinIO (S3-compatible) for audio files
-- **AI**: OpenAI GPT-4o for debates, OpenAI TTS for audio
+- **Cache/PubSub**: Redis for real-time communication
+- **AI**: AI-powered judging system for evaluation
 - **Auth**: NextAuth.js with Google/GitHub OAuth
 
 ## 🔧 Individual Commands
@@ -110,27 +109,29 @@ The `dx` command handles everything automatically:
 If you need to run things separately:
 
 ```bash
-# In apps/web directory
+# From root directory - Start Docker services (shared infrastructure)
+pnpm docker:up
+
+# From root directory - Stop Docker services
+pnpm docker:down
+
+# From root directory - Database operations
+pnpm db:generate
+pnpm db:migrate
+pnpm db:studio
+
+# Or from apps/web directory
 cd apps/web
+pnpm db:generate    # Shortcut to root command
+pnpm db:migrate     # Shortcut to root command
 
-# Start Docker services only
-docker-compose up -d
+# Start Next.js development server only (from apps/web)
+cd apps/web
+pnpm dev
 
-# Stop Docker services
-docker-compose down
-
-# Install dependencies
-npm install
-
-# Database operations
-npx prisma generate
-npx prisma migrate dev
-
-# Start development server only
-npm run dev
-
-# Start all services together
-npm run dev:all
+# Start server app separately (from root)
+cd apps/server
+pnpm dev
 ```
 
 ## 🔒 Environment Variables
@@ -154,14 +155,15 @@ npm run dev:all
 ### Reset Everything
 
 ```bash
-# Stop all services
-cd apps/web && docker-compose down -v
+# From root directory - Stop and remove all Docker services
+pnpm docker:down -v
 
-# Remove containers and volumes
+# Remove containers and volumes (optional)
 docker system prune -f
 
 # Start fresh
-cd ../../ && yarn dx
+pnpm docker:up
+pnpm db:migrate
 ```
 
 ## 🚀 Production Deployment

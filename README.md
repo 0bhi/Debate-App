@@ -1,135 +1,205 @@
-# Turborepo starter
+# 🎯 Debate App - Monorepo
 
-This Turborepo starter is maintained by the Turborepo core team.
+A real-time debate platform built with Next.js, TypeScript, and WebSockets, organized as a Turborepo monorepo.
 
-## Using this example
-
-Run the following command:
-
-```sh
-npx create-turbo@latest
-```
-
-## What's inside?
-
-This Turborepo includes the following packages/apps:
-
-### Apps and Packages
-
-- `docs`: a [Next.js](https://nextjs.org/) app
-- `web`: another [Next.js](https://nextjs.org/) app
-- `@repo/ui`: a stub React component library shared by both `web` and `docs` applications
-- `@repo/eslint-config`: `eslint` configurations (includes `eslint-config-next` and `eslint-config-prettier`)
-- `@repo/typescript-config`: `tsconfig.json`s used throughout the monorepo
-
-Each package/app is 100% [TypeScript](https://www.typescriptlang.org/).
-
-### Utilities
-
-This Turborepo has some additional tools already setup for you:
-
-- [TypeScript](https://www.typescriptlang.org/) for static type checking
-- [ESLint](https://eslint.org/) for code linting
-- [Prettier](https://prettier.io) for code formatting
-
-### Build
-
-To build all apps and packages, run the following command:
+## 📁 Project Structure
 
 ```
-cd my-turborepo
-
-# With [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation) installed (recommended)
-turbo build
-
-# Without [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation), use your package manager
-npx turbo build
-yarn dlx turbo build
-pnpm exec turbo build
+debate-app/
+├── docker-compose.yml          # Shared infrastructure (PostgreSQL, Redis, MinIO)
+├── apps/
+│   ├── web/                    # Next.js frontend application
+│   └── server/                 # WebSocket & HTTP API server
+└── packages/
+    ├── database/               # Shared Prisma schema and client
+    ├── types/                  # Shared TypeScript types
+    ├── ui/                     # Shared React components
+    ├── eslint-config/          # ESLint configurations
+    └── typescript-config/      # TypeScript configurations
 ```
 
-You can build a specific package by using a [filter](https://turborepo.com/docs/crafting-your-repository/running-tasks#using-filters):
+## 🚀 Quick Start
+
+### Prerequisites
+
+- [Docker](https://docs.docker.com/get-docker/) and Docker Compose
+- [Node.js](https://nodejs.org/) (v18 or later)
+- [pnpm](https://pnpm.io/) (v9.0.0)
+
+### Setup
+
+1. **Install dependencies:**
+   ```bash
+   pnpm install
+   ```
+
+2. **Set up environment variables:**
+   
+   Create `apps/web/.env`:
+   ```bash
+   NEXTAUTH_SECRET=your-random-secret-here
+   NEXTAUTH_URL=http://localhost:3000
+   DATABASE_URL=postgresql://debate_user:debate_password@localhost:5432/debate_db
+   NEXT_PUBLIC_WS_URL=ws://localhost:3001
+   NEXT_PUBLIC_SERVER_API_URL=http://localhost:3002
+   ```
+
+   Create `apps/server/.env`:
+   ```bash
+   GEMINI_API_KEY=your-gemini-api-key
+   # Gemini API rate limiting (optional, defaults shown)
+   GEMINI_RATE_LIMIT_RPM=10          # Requests per minute (default: 10, adjust based on your API tier)
+   GEMINI_RATE_LIMIT_WINDOW_SECONDS=60  # Time window in seconds (default: 60)
+   DATABASE_URL=postgresql://debate_user:debate_password@localhost:5432/debate_db
+   REDIS_URL=redis://localhost:6379
+   S3_ACCESS_KEY_ID=minioadmin
+   S3_SECRET_ACCESS_KEY=minioadmin123
+   S3_REGION=us-east-1
+   S3_ENDPOINT=http://localhost:9000
+   S3_BUCKET=debate-assets
+   WS_PORT=3001
+   HTTP_PORT=3002
+   ```
+
+3. **Start infrastructure services:**
+   ```bash
+   # From root directory
+   pnpm docker:up
+   ```
+
+4. **Set up database:**
+   ```bash
+   pnpm db:generate
+   pnpm db:migrate
+   ```
+
+5. **Start all applications:**
+   ```bash
+   # This starts both web and server apps
+   pnpm dev
+   ```
+
+   Or start individually:
+   ```bash
+   # Terminal 1: WebSocket & HTTP server
+   cd apps/server && pnpm dev
+
+   # Terminal 2: Next.js web app
+   cd apps/web && pnpm dev
+   ```
+
+## 🐳 Docker Services
+
+All infrastructure services are defined in the root `docker-compose.yml` because they are shared between `web` and `server` applications.
+
+### Available Commands (from root):
+
+```bash
+pnpm docker:up       # Start all Docker services
+pnpm docker:down     # Stop all Docker services
+pnpm docker:logs     # View Docker service logs
+pnpm docker:restart  # Restart all Docker services
+pnpm docker:ps       # List running Docker services
+```
+
+### Services:
+
+- **PostgreSQL** (port 5432) - Database for both apps
+- **Redis** (port 6379) - Cache and pub/sub for both apps
+- **MinIO** (ports 9000/9001) - S3-compatible storage for both apps
+
+## 📦 Workspace Scripts
+
+### Root Level
+
+```bash
+pnpm dev              # Start all apps in development mode
+pnpm build            # Build all apps and packages
+pnpm lint             # Lint all apps and packages
+pnpm check-types      # Type-check all apps and packages
+pnpm format           # Format code with Prettier
+
+# Database operations
+pnpm db:generate      # Generate Prisma client
+pnpm db:migrate       # Run database migrations
+pnpm db:studio        # Open Prisma Studio
+```
+
+### App-Specific
+
+```bash
+# Web app (apps/web)
+pnpm --filter web dev
+
+# Server app (apps/server)
+pnpm --filter server dev
+```
+
+## 🏗️ Architecture
+
+Both `apps/web` and `apps/server` share the same infrastructure:
 
 ```
-# With [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation) installed (recommended)
-turbo build --filter=docs
-
-# Without [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation), use your package manager
-npx turbo build --filter=docs
-yarn exec turbo build --filter=docs
-pnpm exec turbo build --filter=docs
+┌─────────────────┐         ┌─────────────────┐
+│   apps/web      │         │  apps/server    │
+│   (Next.js)     │         │  (WebSocket)    │
+└────────┬────────┘         └────────┬────────┘
+         │                           │
+         └───────────┬───────────────┘
+                     │
+         ┌───────────┴───────────┐
+         │                       │
+    ┌────▼────┐  ┌────▼────┐  ┌──▼─────┐
+    │Postgres │  │ Redis   │  │ MinIO  │
+    │(Docker) │  │(Docker) │  │(Docker)│
+    └─────────┘  └─────────┘  └────────┘
 ```
 
-### Develop
+## 🔧 Development
 
-To develop all apps and packages, run the following command:
+### Why is docker-compose.yml at the root?
 
-```
-cd my-turborepo
+The `docker-compose.yml` file is at the root because:
+- ✅ **Shared Infrastructure**: Both `web` and `server` apps use PostgreSQL, Redis, and MinIO
+- ✅ **Single Source of Truth**: One place to manage all development infrastructure
+- ✅ **Monorepo Best Practice**: Shared resources belong at the root level
+- ✅ **Easier Management**: Start/stop services from root without navigating to subdirectories
 
-# With [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation) installed (recommended)
-turbo dev
+### Running Individual Services
 
-# Without [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation), use your package manager
-npx turbo dev
-yarn exec turbo dev
-pnpm exec turbo dev
-```
+If you need to run services separately:
 
-You can develop a specific package by using a [filter](https://turborepo.com/docs/crafting-your-repository/running-tasks#using-filters):
+```bash
+# Start only Docker services (from root)
+pnpm docker:up
 
-```
-# With [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation) installed (recommended)
-turbo dev --filter=web
+# Start only web app
+pnpm --filter web dev
 
-# Without [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation), use your package manager
-npx turbo dev --filter=web
-yarn exec turbo dev --filter=web
-pnpm exec turbo dev --filter=web
-```
+# Start only server app
+pnpm --filter server dev
 
-### Remote Caching
-
-> [!TIP]
-> Vercel Remote Cache is free for all plans. Get started today at [vercel.com](https://vercel.com/signup?/signup?utm_source=remote-cache-sdk&utm_campaign=free_remote_cache).
-
-Turborepo can use a technique known as [Remote Caching](https://turborepo.com/docs/core-concepts/remote-caching) to share cache artifacts across machines, enabling you to share build caches with your team and CI/CD pipelines.
-
-By default, Turborepo will cache locally. To enable Remote Caching you will need an account with Vercel. If you don't have an account you can [create one](https://vercel.com/signup?utm_source=turborepo-examples), then enter the following commands:
-
-```
-cd my-turborepo
-
-# With [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation) installed (recommended)
-turbo login
-
-# Without [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation), use your package manager
-npx turbo login
-yarn exec turbo login
-pnpm exec turbo login
+# Run database migrations
+pnpm db:migrate
 ```
 
-This will authenticate the Turborepo CLI with your [Vercel account](https://vercel.com/docs/concepts/personal-accounts/overview).
+## 📚 Documentation
 
-Next, you can link your Turborepo to your Remote Cache by running the following command from the root of your Turborepo:
+- [Web App README](./apps/web/README.md) - Detailed web app documentation
+- [Database Package README](./packages/database/README.md) - Database schema and migrations
 
-```
-# With [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation) installed (recommended)
-turbo link
+## 🚀 Production Deployment
 
-# Without [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation), use your package manager
-npx turbo link
-yarn exec turbo link
-pnpm exec turbo link
-```
+For production, replace Docker services with managed cloud services:
+- **Database**: AWS RDS, Supabase, Neon, or PlanetScale
+- **Cache**: AWS ElastiCache, Upstash Redis
+- **Storage**: AWS S3, Cloudflare R2
+- **Hosting**: Vercel (web), Railway/Render/Fly.io (server)
 
-## Useful Links
+## 📝 License
 
-Learn more about the power of Turborepo:
+MIT License
 
-- [Tasks](https://turborepo.com/docs/crafting-your-repository/running-tasks)
-- [Caching](https://turborepo.com/docs/crafting-your-repository/caching)
-- [Remote Caching](https://turborepo.com/docs/core-concepts/remote-caching)
-- [Filtering](https://turborepo.com/docs/crafting-your-repository/running-tasks#using-filters)
-- [Configuration Options](https://turborepo.com/docs/reference/configuration)
-- [CLI Usage](https://turborepo.com/docs/reference/command-line-reference)
+---
+
+**Built with ❤️ using Next.js, Turborepo, and modern web technologies**

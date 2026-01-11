@@ -10,7 +10,6 @@ config({ path: resolve(__dirname, ".env") });
 
 import { getWebSocketServer } from "./ws";
 import { initializeQueues } from "./queues";
-import { ttsWorker } from "./queues/tts-worker";
 import { logger } from "./utils/logger";
 import { env } from "./env";
 
@@ -18,7 +17,7 @@ import { env } from "./env";
 export { debateOrchestrator } from "./orchestrator/debateOrchestrator";
 export { logger } from "./utils/logger";
 export { getWebSocketServer } from "./ws";
-export { prisma } from "./services/prisma";
+export { prisma } from "@repo/database";
 export type { SessionState } from "@repo/types";
 
 async function startServer() {
@@ -37,6 +36,16 @@ async function startServer() {
       logger.warn("Failed to initialize queues, continuing without queues", {
         error,
       });
+    }
+
+    // Recover pending turns for running debates (after server restart)
+    try {
+      const { debateOrchestrator } = await import("./orchestrator/debateOrchestrator");
+      logger.info("Recovering pending turns for running debates...");
+      await debateOrchestrator.recoverPendingTurns();
+      logger.info("Pending turns recovery completed");
+    } catch (error) {
+      logger.warn("Failed to recover pending turns, continuing", { error });
     }
 
     // Start WebSocket server
@@ -62,10 +71,6 @@ async function startServer() {
       throw error;
     }
 
-    // Start workers
-    logger.info("Starting TTS worker...");
-    logger.info("TTS worker started");
-
     logger.info(`🚀 AI Debate Club server running!`);
     logger.info(`📡 WebSocket server: ws://localhost:${env.WS_PORT}`);
     logger.info(`🛠  HTTP API server: http://localhost:${env.HTTP_PORT}`);
@@ -78,7 +83,6 @@ async function startServer() {
       await Promise.all([
         wsServer.close(),
         new Promise((res, rej) => httpServer?.close((e: any) => (e ? rej(e) : res(null)))),
-        ttsWorker.close(),
       ]);
 
       process.exit(0);
@@ -90,7 +94,6 @@ async function startServer() {
       await Promise.all([
         wsServer.close(),
         new Promise((res, rej) => httpServer?.close((e: any) => (e ? rej(e) : res(null)))),
-        ttsWorker.close(),
       ]);
 
       process.exit(0);

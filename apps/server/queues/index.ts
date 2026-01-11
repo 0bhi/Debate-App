@@ -8,9 +8,6 @@ const connection: ConnectionOptions = {
   password: new URL(env.REDIS_URL).password || undefined,
 };
 
-// TTS Queue
-export const ttsQueue = new Queue("tts", { connection });
-
 // Export Queue
 export const exportQueue = new Queue("export", { connection });
 
@@ -22,13 +19,6 @@ export async function initializeQueues() {
     // Clean up any existing jobs (optional, for development)
     if (env.NODE_ENV === "development") {
       logger.info("Development mode: cleaning up existing jobs...");
-      try {
-        await ttsQueue.obliterate({ force: true });
-        logger.info("TTS queue cleaned");
-      } catch (error) {
-        logger.warn("Failed to clean TTS queue, continuing...", { error });
-      }
-      
       try {
         await exportQueue.obliterate({ force: true });
         logger.info("Export queue cleaned");
@@ -48,7 +38,7 @@ export async function initializeQueues() {
 export async function closeQueues() {
   logger.info("Closing BullMQ queues");
 
-  await Promise.all([ttsQueue.close(), exportQueue.close()]);
+  await exportQueue.close();
 
   logger.info("Queues closed");
 }

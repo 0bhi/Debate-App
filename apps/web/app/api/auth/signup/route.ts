@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "../../../../lib/prisma";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
+import { logger } from "../../../../lib/logger";
 
 const signupSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -57,7 +58,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    console.error("Signup error:", error);
+    logger.error("Signup error", { error });
     return NextResponse.json(
       { error: "Failed to create user" },
       { status: 500 }

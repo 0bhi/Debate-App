@@ -5,6 +5,7 @@ import { UserPlus, Check, X, Clock, Users } from "lucide-react";
 import { Avatar } from "./Avatar";
 import toast from "react-hot-toast";
 import { useRouter } from "next/navigation";
+import { logger } from "../lib/logger";
 
 interface FriendRequest {
   id: string;
@@ -56,7 +57,7 @@ export function FriendRequests() {
       const data = await response.json();
       setFriendRequests(data);
     } catch (error) {
-      console.error("Failed to fetch friend requests:", error);
+      logger.error("Failed to fetch friend requests", { error });
     } finally {
       setIsLoading(false);
     }
@@ -71,7 +72,7 @@ export function FriendRequests() {
       const data = await response.json();
       setChallenges(data);
     } catch (error) {
-      console.error("Failed to fetch challenges:", error);
+      logger.error("Failed to fetch challenges", { error });
     }
   };
 

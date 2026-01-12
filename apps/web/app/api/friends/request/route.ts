@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "../../../../lib/auth";
 import { prisma } from "../../../../lib/prisma";
 import { z } from "zod";
+import { logger } from "../../../../lib/logger";
 
 const sendFriendRequestSchema = z.object({
   receiverId: z.string().min(1, "Receiver ID is required"),
@@ -130,7 +131,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    console.error("Failed to send friend request:", error);
+    logger.error("Failed to send friend request", { error });
     return NextResponse.json(
       { error: "Failed to send friend request" },
       { status: 500 }

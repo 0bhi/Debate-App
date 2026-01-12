@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Copy, Check, Share2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { apiClient } from "../lib/api";
+import { logger } from "../lib/logger";
 
 interface InviteButtonProps {
   debateId: string;
@@ -33,7 +34,7 @@ export function InviteButton({ debateId, disabled }: InviteButtonProps) {
       setInviteUrl(response.inviteUrl);
       await copyToClipboard(response.inviteUrl);
     } catch (error: any) {
-      console.error("Failed to get invitation link:", error);
+      logger.error("Failed to get invitation link", { error, debateId });
       const errorMessage = error?.message || "Failed to get invitation link";
       
       // Provide more helpful error messages
@@ -56,7 +57,7 @@ export function InviteButton({ debateId, disabled }: InviteButtonProps) {
       toast.success("Invitation link copied to clipboard!");
       setTimeout(() => setCopied(false), 2000);
     } catch (error) {
-      console.error("Failed to copy to clipboard:", error);
+      logger.error("Failed to copy to clipboard", { error });
       toast.error("Failed to copy link");
     }
   };

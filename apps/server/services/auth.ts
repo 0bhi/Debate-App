@@ -82,3 +82,20 @@ export function extractTokenFromRequest(req: {
 
   return null;
 }
+
+/**
+ * Extract and verify user ID from Express request
+ * @param req - The Express request object
+ * @returns The authenticated user ID, or null if not authenticated
+ */
+export function getAuthenticatedUserId(
+  req: { headers?: Record<string, string | string[] | undefined> }
+): string | null {
+  const token = extractTokenFromRequest(req);
+  if (!token) {
+    return null;
+  }
+
+  const decoded = verifyNextAuthToken(token);
+  return decoded?.sub || null;
+}

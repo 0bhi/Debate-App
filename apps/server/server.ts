@@ -4,6 +4,16 @@ import { debateOrchestrator } from "./orchestrator/debateOrchestrator";
 import { logger } from "./utils/logger";
 import { CreateDebateSchema } from "@repo/types";
 import { rateLimiter } from "./services/rateLimiter";
+import { getAuthenticatedUserId } from "./services/auth";
+
+// Extend Express Request type to include authenticated userId
+declare global {
+  namespace Express {
+    interface Request {
+      userId?: string;
+    }
+  }
+}
 
 function getAllowedOrigins(): string[] {
   if (env.NODE_ENV === "development") {
@@ -175,35 +185,63 @@ export function createHttpServer() {
     "get"
   );
 
-  // POST /debates
-  app.post("/debates", postRateLimit, async (req: Request, res: Response) => {
-    try {
-      const validated = CreateDebateSchema.parse(req.body);
-      // Extract userId from body or use debaterAId if userId not provided
-      // This allows tracking who created the debate
-      const userId = (req.body as any).userId || validated.debaterAId;
-      const result = await debateOrchestrator.createDebateSession(
-        validated,
-        userId
-      );
-      res.status(200).json(result);
-    } catch (error: any) {
-      if (error?.name === "ZodError") {
-        res.status(400).json({
-          error: "Invalid request data",
-          details: error.errors,
-        });
-        return;
-      }
-      logger.error("Error creating debate", { error });
-      res.status(500).json({ error: "Internal server error" });
+  /**
+   * Authentication middleware
+   * Extracts and verifies JWT token, attaches userId to request
+   */
+  function authenticateRequest(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): void {
+    const userId = getAuthenticatedUserId(req);
+
+    if (!userId) {
+      res.status(401).json({
+        error: "Unauthorized",
+        message: "Authentication required. Please provide a valid JWT token.",
+      });
+      return;
     }
-  });
+
+    req.userId = userId;
+    next();
+  }
+
+  // POST /debates
+  app.post(
+    "/debates",
+    postRateLimit,
+    authenticateRequest,
+    async (req: Request, res: Response) => {
+      try {
+        const validated = CreateDebateSchema.parse(req.body);
+        // Use authenticated userId from JWT token
+        const userId = req.userId!;
+        const result = await debateOrchestrator.createDebateSession(
+          validated,
+          userId
+        );
+        res.status(200).json(result);
+      } catch (error: any) {
+        if (error?.name === "ZodError") {
+          res.status(400).json({
+            error: "Invalid request data",
+            details: error.errors,
+          });
+          return;
+        }
+        logger.error("Error creating debate", { error });
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
 
   // POST /debates/:id/assign
   app.post(
     "/debates/:id/assign",
     postRateLimit,
+    authenticateRequest,
     async (req: Request, res: Response) => {
       try {
         const id = req.params.id;
@@ -212,16 +250,13 @@ export function createHttpServer() {
           return;
         }
         const position = (req.body as any).position; // "A" or "B"
-        const userId = (req.body as any).userId;
+        // Use authenticated userId from JWT token
+        const userId = req.userId!;
 
         if (!position || !["A", "B"].includes(position)) {
           res.status(400).json({
             error: "Invalid position. Must be 'A' or 'B'",
           });
-          return;
-        }
-        if (!userId) {
-          res.status(400).json({ error: "userId is required" });
           return;
         }
 
@@ -258,6 +293,7 @@ export function createHttpServer() {
   app.post(
     "/debates/:id/retry-judge",
     postRateLimit,
+    authenticateRequest,
     async (req: Request, res: Response) => {
       try {
         const id = req.params.id;
@@ -265,6 +301,28 @@ export function createHttpServer() {
           res.status(400).json({ error: "Debate ID is required" });
           return;
         }
+
+        // Verify user is authorized to retry judging (must be a debater or creator)
+        const state = await debateOrchestrator.loadSessionState(id);
+        if (!state) {
+          res.status(404).json({ error: "Debate session not found" });
+          return;
+        }
+
+        const userId = req.userId!;
+        const isAuthorized =
+          state.debaterAId === userId ||
+          state.debaterBId === userId ||
+          state.userId === userId;
+
+        if (!isAuthorized) {
+          res.status(403).json({
+            error: "Forbidden",
+            message: "Only debate participants or creator can retry judging",
+          });
+          return;
+        }
+
         await debateOrchestrator.retryJudging(id);
         res.status(200).json({
           success: true,
@@ -287,6 +345,7 @@ export function createHttpServer() {
   app.get(
     "/debates/:id/invite",
     getRateLimit,
+    authenticateRequest,
     async (req: Request, res: Response) => {
       try {
         const id = req.params.id;
@@ -294,6 +353,26 @@ export function createHttpServer() {
           res.status(400).json({ error: "Debate ID is required" });
           return;
         }
+
+        // Verify user is authorized to get invitation link (must be creator or debater A)
+        const state = await debateOrchestrator.loadSessionState(id);
+        if (!state) {
+          res.status(404).json({ error: "Debate session not found" });
+          return;
+        }
+
+        const userId = req.userId!;
+        const isAuthorized =
+          state.userId === userId || state.debaterAId === userId;
+
+        if (!isAuthorized) {
+          res.status(403).json({
+            error: "Forbidden",
+            message: "Only debate creator or debater A can get invitation link",
+          });
+          return;
+        }
+
         const inviteLink = await debateOrchestrator.getInvitationLink(id);
         if (!inviteLink) {
           res.status(404).json({
@@ -313,6 +392,7 @@ export function createHttpServer() {
   app.post(
     "/debates/:id/accept-invitation",
     postRateLimit,
+    authenticateRequest,
     async (req: Request, res: Response) => {
       try {
         const id = req.params.id;
@@ -321,16 +401,14 @@ export function createHttpServer() {
           return;
         }
         const token = (req.body as any).token;
-        const userId = (req.body as any).userId;
 
         if (!token) {
-          res.status(400).json({ error: "Token is required" });
+          res.status(400).json({ error: "Invitation token is required" });
           return;
         }
-        if (!userId) {
-          res.status(400).json({ error: "userId is required" });
-          return;
-        }
+
+        // Use authenticated userId from JWT token
+        const userId = req.userId!;
 
         const success = await debateOrchestrator.acceptInvitation(
           id,

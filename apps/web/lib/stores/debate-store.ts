@@ -3,6 +3,7 @@ import { subscribeWithSelector } from "zustand/middleware";
 import { SessionState, CreateDebateRequest, ServerMessage } from "@repo/types";
 import { DebateWebSocketClient } from "../ws-client";
 import { apiClient } from "../api";
+import { logger } from "../logger";
 
 interface DebateStore {
   // State
@@ -76,21 +77,12 @@ export const useDebateStore = create<DebateStore>()(
           const sessionState = await apiClient.getDebate(sessionId);
           set({ sessionState });
         } catch (error) {
-          let errorMessage =
+          const errorMessage =
             error instanceof Error ? error.message : "Failed to load debate";
 
-          // Extract user-friendly message (before pipe separator for dev details)
-          const userMessage = errorMessage.split(" | ")[0];
+          logger.error("Failed to load debate", { error, sessionId });
 
-          // Log full error details to console for debugging
-          if (
-            process.env.NODE_ENV === "development" &&
-            errorMessage.includes(" | ")
-          ) {
-            console.error("Debate load error details:", errorMessage);
-          }
-
-          set({ error: userMessage });
+          set({ error: errorMessage });
           throw error;
         }
       },
@@ -337,10 +329,9 @@ export const useDebateStore = create<DebateStore>()(
             break;
 
           default:
-            console.warn(
-              "Unknown WebSocket message type:",
-              (message as any).type
-            );
+            logger.warn("Unknown WebSocket message type", {
+              type: (message as any).type,
+            });
         }
       },
     };

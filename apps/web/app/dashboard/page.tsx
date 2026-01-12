@@ -9,6 +9,7 @@ import { UserSearch } from "../../components/UserSearch";
 import { FriendRequests } from "../../components/FriendRequests";
 import { useDebateStore } from "../../lib/stores/debate-store";
 import { Brain, Plus, Search, UserPlus, Sparkles } from "lucide-react";
+import { logger } from "../../lib/logger";
 
 type TabType = "create" | "search" | "requests";
 
@@ -36,7 +37,7 @@ export default function Dashboard() {
       // No need to reset isCreating since we're navigating away
       router.push(`/debate/${sessionId}`);
     } catch (error) {
-      console.error("Failed to create debate:", error);
+      logger.error("Failed to create debate", { error });
       setIsCreating(false);
     }
   };

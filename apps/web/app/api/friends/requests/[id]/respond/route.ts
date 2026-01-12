@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "../../../../../../lib/auth";
 import { prisma } from "../../../../../../lib/prisma";
 import { z } from "zod";
+import { logger } from "../../../../../../lib/logger";
 
 const respondFriendRequestSchema = z.object({
   action: z.enum(["ACCEPT", "REJECT"], {
@@ -132,7 +133,7 @@ export async function POST(
       );
     }
 
-    console.error("Failed to respond to friend request:", error);
+    logger.error("Failed to respond to friend request", { error });
     return NextResponse.json(
       { error: "Failed to respond to friend request" },
       { status: 500 }

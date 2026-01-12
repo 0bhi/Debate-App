@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "../../../../lib/auth";
 import { prisma } from "../../../../lib/prisma";
+import { logger } from "../../../../lib/logger";
 
 export async function GET(req: NextRequest) {
   try {
@@ -75,7 +76,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json(formattedRequests);
   } catch (error) {
-    console.error("Failed to fetch friend requests:", error);
+    logger.error("Failed to fetch friend requests", { error });
     return NextResponse.json(
       { error: "Failed to fetch friend requests" },
       { status: 500 }

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Search, Users } from "lucide-react";
 import { UserCard } from "./UserCard";
 import { useDebounce } from "../lib/hooks/useDebounce";
+import { logger } from "../lib/logger";
 
 export function UserSearch() {
   const [query, setQuery] = useState("");
@@ -29,7 +30,7 @@ export function UserSearch() {
       const data = await response.json();
       setResults(data);
     } catch (error) {
-      console.error("Failed to search users:", error);
+      logger.error("Failed to search users", { error, query: searchQuery });
       setResults([]);
     } finally {
       setIsLoading(false);

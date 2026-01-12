@@ -1,17 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-
-// Use console directly for server-side logging
-const logger = {
-  info: (message: string, meta?: any) => {
-    console.log(`[INFO] ${message}`, meta || "");
-  },
-  error: (message: string, meta?: any) => {
-    console.error(`[ERROR] ${message}`, meta || "");
-  },
-  warn: (message: string, meta?: any) => {
-    console.warn(`[WARN] ${message}`, meta || "");
-  },
-};
+import { logger } from "../../../../lib/logger";
 
 /**
  * Maximum retries for 503 service unavailable errors
@@ -195,7 +183,6 @@ export async function POST(
     return NextResponse.json(
       {
         error: "Failed to retry judging",
-        details: process.env.NODE_ENV === "development" ? errorMessage : undefined,
       },
       { status: 500 }
     );

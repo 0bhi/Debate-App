@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "../../../../../lib/auth";
 import { prisma } from "../../../../../lib/prisma";
 import { env } from "../../../../../lib/env";
+import { logger } from "../../../../../lib/logger";
 
 export async function POST(
   req: NextRequest,
@@ -109,7 +110,7 @@ export async function POST(
       message: "Challenge accepted and debate created",
     });
   } catch (error) {
-    console.error("Failed to accept challenge:", error);
+    logger.error("Failed to accept challenge", { error });
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to accept challenge" },
       { status: 500 }

@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { X, ChevronRight, MessageSquare, Loader2 } from "lucide-react";
+import { logger } from "../lib/logger";
 
 interface Debate {
   id: string;
@@ -60,7 +61,7 @@ export function DebatesSidebar(_props: DebatesSidebarProps) {
       setDebates(data);
       setError(null);
     } catch (error) {
-      console.error("Failed to fetch debates:", error);
+      logger.error("Failed to fetch debates", { error });
       // Don't set debates to empty array on error, keep previous data
       // setDebates([]);
     } finally {
@@ -78,23 +79,6 @@ export function DebatesSidebar(_props: DebatesSidebarProps) {
     e.stopPropagation(); // Prevent event bubbling to overlay
     setIsOpen(false); // Close sidebar when navigating
     router.push(`/debate/${debateId}`);
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "RUNNING":
-        return "bg-green-500";
-      case "CREATED":
-        return "bg-blue-500";
-      case "JUDGING":
-        return "bg-purple-500";
-      case "FINISHED":
-        return "bg-slate-400";
-      case "FAILED":
-        return "bg-red-500";
-      default:
-        return "bg-slate-400";
-    }
   };
 
   const getStatusLabel = (status: string) => {

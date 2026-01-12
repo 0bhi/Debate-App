@@ -1,5 +1,6 @@
 import { CreateDebateRequest } from "./validators";
 import { env } from "./env";
+import { logger } from "./logger";
 
 // Prefer calling the web's API routes, which proxy to the server.
 // If a public server API URL is provided, call it directly from the client.
@@ -47,13 +48,12 @@ class ApiClient {
           ? retryAfterSeconds * 1000
           : BASE_RETRY_DELAY_MS * Math.pow(2, retryCount);
 
-        // Log retry attempt (only in development or if console is available)
-        if (typeof console !== "undefined" && console.warn) {
-          console.warn(`503 Service Unavailable, retrying... (attempt ${retryCount + 1}/${MAX_RETRIES_503})`, {
-            delayMs: backoffDelayMs,
-            retryAfter: retryAfterSeconds,
-          });
-        }
+        logger.warn("503 Service Unavailable, retrying", {
+          attempt: retryCount + 1,
+          maxRetries: MAX_RETRIES_503,
+          delayMs: backoffDelayMs,
+          retryAfter: retryAfterSeconds,
+        });
 
         // Wait before retrying
         await new Promise((resolve) => setTimeout(resolve, backoffDelayMs));
@@ -91,25 +91,12 @@ class ApiClient {
             // Prefer error.error or error.message from server response
             errorMessage = error.error || error.message || errorMessage;
             
-            // In development, include additional details if available
-            // Format for better display in console and UI
-            if (process.env.NODE_ENV === "development") {
-              const details: string[] = [];
-              if (error.details) {
-                details.push(`Details: ${error.details}`);
-              }
-              if (error.serverUrl) {
-                details.push(`Server URL: ${error.serverUrl}`);
-              }
-              if (details.length > 0) {
-                // Use a separator that works well in both console and UI
-                errorMessage = `${errorMessage} | ${details.join(" | ")}`;
-              }
-            }
-            
-            // If it's a rate limit error, provide more context
-            if (error.code === "RATE_LIMIT_EXCEEDED" || response.status === 429) {
-              errorMessage = error.error || errorMessage;
+            // Log additional details for debugging
+            if (error.details || error.serverUrl) {
+              logger.debug("Error response details", {
+                details: error.details,
+                serverUrl: error.serverUrl,
+              });
             }
           }
         } catch {

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "../../../../lib/auth";
 import { prisma } from "../../../../lib/prisma";
+import { logger } from "../../../../lib/logger";
 
 export async function GET(req: NextRequest) {
   try {
@@ -101,7 +102,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json(usersWithStatus);
   } catch (error) {
-    console.error("Failed to search users:", error);
+    logger.error("Failed to search users", { error });
     return NextResponse.json(
       { error: "Failed to search users" },
       { status: 500 }

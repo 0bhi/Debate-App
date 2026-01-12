@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "../../../lib/auth";
 import { prisma } from "../../../lib/prisma";
 import { z } from "zod";
+import { logger } from "../../../lib/logger";
 
 const createChallengeSchema = z.object({
   challengedId: z.string().min(1, "Challenged user ID is required"),
@@ -100,7 +101,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    console.error("Failed to create challenge:", error);
+    logger.error("Failed to create challenge", { error });
     return NextResponse.json(
       { error: "Failed to create challenge" },
       { status: 500 }
@@ -183,7 +184,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json(formattedChallenges);
   } catch (error) {
-    console.error("Failed to fetch challenges:", error);
+    logger.error("Failed to fetch challenges", { error });
     return NextResponse.json(
       { error: "Failed to fetch challenges" },
       { status: 500 }

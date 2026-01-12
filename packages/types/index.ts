@@ -62,6 +62,7 @@ export type ServerMessage = z.infer<typeof ServerMessageSchema>;
 export interface SessionState {
   id: string;
   topic: string;
+  userId?: string; // Creator/owner of the debate
   debaterAId?: string;
   debaterBId?: string;
   debaterAName?: string;

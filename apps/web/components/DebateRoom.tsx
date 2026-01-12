@@ -2,15 +2,16 @@
 
 import { useEffect, useState, useRef } from "react";
 import { useDebateStore } from "../lib/stores/debate-store";
-import { Avatar } from "./Avatar";
 import { Transcript } from "./Transcript";
 import { JudgePanel } from "./JudgePanel";
 import { ArgumentInput } from "./ArgumentInput";
 import { DebatesSidebar } from "./DebatesSidebar";
-import { InviteButton } from "./InviteButton";
+import { LoadingState } from "./debate/LoadingState";
+import { DebatersHeader } from "./debate/DebatersHeader";
 import toast from "react-hot-toast";
 import { useSession } from "next-auth/react";
 import { useSearchParams, useRouter } from "next/navigation";
+import { logger } from "../lib/logger";
 
 interface DebateRoomProps {
   sessionId: string;
@@ -90,10 +91,9 @@ export function DebateRoom({ sessionId }: DebateRoomProps) {
         isInitializedRef.current = true;
         currentSessionIdRef.current = sessionId;
       } catch (error) {
-        console.error("Failed to initialize debate room:", error);
+        logger.error("Failed to initialize debate room", { error, sessionId });
         // Error message is already set in the store by loadDebate/connectWebSocket
         // The useEffect below will show it via toast, so we don't need to show another toast here
-        // Just log the error for debugging
         isInitializedRef.current = false;
       } finally {
         isInitializingRef.current = false;
@@ -186,7 +186,7 @@ export function DebateRoom({ sessionId }: DebateRoomProps) {
               window.history.replaceState({}, "", url.toString());
             }
           } catch (error: any) {
-            console.error("Failed to accept invitation:", error);
+            logger.error("Failed to accept invitation", { error, sessionId });
             const errorMessage = error.message || "Failed to accept invitation";
             toast.error(errorMessage);
             setInvitationAccepted(true); // Mark as attempted to prevent retries
@@ -219,46 +219,16 @@ export function DebateRoom({ sessionId }: DebateRoomProps) {
     isConnected,
   ]); // Only depend on primitive values, not objects/functions
 
-  // Show loading state while session is being checked or debate is loading
   if (sessionStatus === "loading" || (!sessionState && !inviteToken)) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-          <p className="text-slate-600 dark:text-slate-400">
-            Loading debate...
-          </p>
-        </div>
-      </div>
-    );
+    return <LoadingState message="Loading debate..." />;
   }
 
-  // Show loading state if we have an invite token but are waiting for authentication
   if (inviteToken && sessionStatus === "unauthenticated") {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-          <p className="text-slate-600 dark:text-slate-400">
-            Redirecting to sign in...
-          </p>
-        </div>
-      </div>
-    );
+    return <LoadingState message="Redirecting to sign in..." />;
   }
 
-  // Show loading state if sessionState is not loaded yet (for authenticated users)
   if (!sessionState) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-          <p className="text-slate-600 dark:text-slate-400">
-            Loading debate...
-          </p>
-        </div>
-      </div>
-    );
+    return <LoadingState message="Loading debate..." />;
   }
 
   // Calculate if it's the user's turn
@@ -299,121 +269,13 @@ export function DebateRoom({ sessionId }: DebateRoomProps) {
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20 relative flex flex-col">
       <DebatesSidebar currentDebateId={sessionId} />
       <div className="flex-1 flex flex-col max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-0 w-full">
-        {/* Compact Debaters Section */}
-        <div className="mb-4">
-          <div className="bg-card/80 backdrop-blur-sm border border-border rounded-xl shadow-sm p-3 lg:p-4">
-            {/* Topic Header - Compact */}
-            <div className="text-center mb-3">
-              <div className="inline-flex items-center gap-2 px-3 py-1 bg-primary/10 rounded-full mb-2">
-                <div
-                  className={`w-1.5 h-1.5 rounded-full animate-pulse ${
-                    isConnected ? "bg-green-500" : "bg-red-500"
-                  }`}
-                />
-                <span className="text-xs font-medium text-foreground">
-                  {isConnected ? "Live" : "Offline"}
-                </span>
-              </div>
-              <h2 className="text-sm lg:text-base font-semibold text-muted-foreground">
-                {sessionState.topic}
-              </h2>
-            </div>
-
-            {/* Compact Debaters Display */}
-            <div className="flex items-center justify-center gap-4 lg:gap-8">
-              {/* Debater A */}
-              <div className="flex items-center gap-3">
-                <div className="relative">
-                  <Avatar
-                    name={sessionState.debaterAName || "Debater A"}
-                    size="sm"
-                    isActive={effectiveCurrentSpeaker === "A"}
-                    isSpeaking={false}
-                    showName={false}
-                  />
-                  {effectiveCurrentSpeaker === "A" && (
-                    <div className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-card animate-pulse" />
-                  )}
-                </div>
-                <div>
-                  <div className="font-medium text-foreground text-sm">
-                    {sessionState.debaterAName || "Debater A"}
-                  </div>
-                  {userId === sessionState.debaterAId && (
-                    <div className="inline-flex items-center px-1.5 py-0.5 bg-primary/10 text-primary rounded-full text-xs font-medium">
-                      You
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* VS Divider - Compact */}
-              <div className="px-2 py-1 bg-gradient-to-r from-primary/10 to-accent/10 border border-border rounded-full">
-                <span className="text-xs font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-                  VS
-                </span>
-              </div>
-
-              {/* Debater B */}
-              <div className="flex items-center gap-3">
-                {sessionState.debaterBId ? (
-                  <>
-                    <div className="relative">
-                      <Avatar
-                        name={sessionState.debaterBName || "Debater B"}
-                        size="sm"
-                        isActive={effectiveCurrentSpeaker === "B"}
-                        isSpeaking={false}
-                        showName={false}
-                      />
-                      {effectiveCurrentSpeaker === "B" && (
-                        <div className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-card animate-pulse" />
-                      )}
-                    </div>
-                    <div>
-                      <div className="font-medium text-foreground text-sm">
-                        {sessionState.debaterBName || "Debater B"}
-                      </div>
-                      {userId === sessionState.debaterBId && (
-                        <div className="inline-flex items-center px-1.5 py-0.5 bg-primary/10 text-primary rounded-full text-xs font-medium">
-                          You
-                        </div>
-                      )}
-                    </div>
-                  </>
-                ) : (
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-full bg-muted border-2 border-dashed border-border flex items-center justify-center">
-                      <span className="text-xl text-muted-foreground">?</span>
-                    </div>
-                    <div>
-                      <div className="text-sm font-medium text-muted-foreground">
-                        Waiting for opponent
-                      </div>
-                      {userId === sessionState.debaterAId && (
-                        <div className="mt-1">
-                          <InviteButton debateId={sessionId} />
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Debate Ready Status - Compact */}
-            {sessionState.debaterAId &&
-              sessionState.debaterBId &&
-              sessionState.status === "CREATED" && (
-                <div className="mt-3 p-2 bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 rounded-lg text-center border border-green-200 dark:border-green-800">
-                  <p className="text-green-800 dark:text-green-200 text-sm font-medium">
-                    🎉 Debate Ready! Both debaters have joined. The debate will
-                    start soon.
-                  </p>
-                </div>
-              )}
-          </div>
-        </div>
+        <DebatersHeader
+          sessionState={sessionState}
+          effectiveCurrentSpeaker={effectiveCurrentSpeaker}
+          isConnected={isConnected}
+          userId={userId}
+          sessionId={sessionId}
+        />
 
         {/* Main Content Area - Dynamic grid layout */}
         <div className="flex-1 flex flex-col min-h-0">

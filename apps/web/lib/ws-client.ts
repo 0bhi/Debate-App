@@ -1,7 +1,7 @@
 "use client";
 
 import { ClientMessage, ServerMessage } from "@repo/types";
-// Note: logger import removed as it's not available in the client-side code
+import { logger } from "./logger";
 
 export type WSEventHandler = (message: ServerMessage) => void;
 
@@ -37,11 +37,13 @@ export class DebateWebSocketClient {
    * Fetch authentication token from the API
    * Caches the token and only fetches a new one if the current token is missing or expired
    */
-  private async fetchAuthToken(forceRefresh: boolean = false): Promise<string | null> {
+  private async fetchAuthToken(
+    forceRefresh: boolean = false
+  ): Promise<string | null> {
     // Check if we have a valid cached token (valid for at least 5 more minutes)
     const now = Date.now();
     const fiveMinutes = 5 * 60 * 1000; // 5 minutes in milliseconds
-    
+
     if (!forceRefresh && this.authToken && this.tokenExpiry) {
       const timeUntilExpiry = this.tokenExpiry - now;
       if (timeUntilExpiry > fiveMinutes) {
@@ -58,7 +60,7 @@ export class DebateWebSocketClient {
         },
         credentials: "include", // Include cookies for authentication
       });
-      
+
       if (!response.ok) {
         const errorText = await response.text();
         let errorMessage = `Failed to fetch WebSocket token: ${response.status}`;
@@ -69,35 +71,31 @@ export class DebateWebSocketClient {
           // If parsing fails, use the status text
           errorMessage = errorText || errorMessage;
         }
-        
-        if (response.status === 401) {
-          console.error("Authentication required for WebSocket token:", errorMessage);
-        } else {
-          console.error("Failed to fetch WebSocket token:", errorMessage);
-        }
+
+        logger.error("Failed to fetch WebSocket token", {
+          status: response.status,
+          errorMessage,
+          isAuthError: response.status === 401,
+        });
         return null;
       }
-      
+
       const data = await response.json();
       const token = data.token || null;
-      
+
       if (token) {
         this.authToken = token;
         // Token expires in 1 hour, set expiry to 55 minutes to be safe
-        this.tokenExpiry = now + (55 * 60 * 1000);
+        this.tokenExpiry = now + 55 * 60 * 1000;
       }
-      
+
       return token;
     } catch (error) {
-      // Handle network errors more gracefully
-      if (error instanceof TypeError && error.message === "Failed to fetch") {
-        console.error(
-          "Network error: Unable to reach the server. Please check if the server is running and accessible.",
-          error
-        );
-      } else {
-        console.error("Error fetching WebSocket token:", error);
-      }
+      logger.error("Error fetching WebSocket token", {
+        error: error instanceof Error ? error.message : String(error),
+        isNetworkError:
+          error instanceof TypeError && error.message === "Failed to fetch",
+      });
       return null;
     }
   }
@@ -121,7 +119,10 @@ export class DebateWebSocketClient {
     // Throttle connection attempts to prevent rapid reconnection loops
     const now = Date.now();
     const timeSinceLastAttempt = now - this.lastConnectionAttempt;
-    if (timeSinceLastAttempt < this.CONNECTION_THROTTLE_MS && this.connectionPromise) {
+    if (
+      timeSinceLastAttempt < this.CONNECTION_THROTTLE_MS &&
+      this.connectionPromise
+    ) {
       // Return existing connection promise if we're throttling
       return this.connectionPromise;
     }
@@ -205,7 +206,7 @@ export class DebateWebSocketClient {
             const message: ServerMessage = JSON.parse(event.data);
             this.handleMessage(message);
           } catch (error) {
-            console.error("Failed to parse WebSocket message:", error);
+            logger.error("Failed to parse WebSocket message", { error });
           }
         };
 
@@ -219,7 +220,7 @@ export class DebateWebSocketClient {
         };
 
         this.ws.onerror = (error) => {
-          console.error("WebSocket error:", error);
+          logger.error("WebSocket error", { error });
           // Don't reject immediately, let onclose handle reconnection
           // Only reject if we're still in CONNECTING state
           if (this.ws?.readyState === WebSocket.CONNECTING) {
@@ -264,7 +265,9 @@ export class DebateWebSocketClient {
     }
 
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.error("Max reconnection attempts reached");
+      logger.error("Max reconnection attempts reached", {
+        maxAttempts: this.maxReconnectAttempts,
+      });
       this.emit("connection_failed", {} as ServerMessage);
       return;
     }
@@ -275,18 +278,18 @@ export class DebateWebSocketClient {
       // Refresh token on reconnection (will use cached token if still valid)
       const token = await this.fetchAuthToken();
       if (!token) {
-        console.error("Failed to get token for reconnection");
+        logger.error("Failed to get token for reconnection");
         this.handleDisconnect(); // Try again
         return;
       }
-      
+
       // Rebuild URL with token for reconnection
       const resolvedBaseUrl =
         (process.env.NEXT_PUBLIC_WS_URL as string) || "ws://localhost:3001";
       this.url = this.buildUrl(resolvedBaseUrl, token);
 
       this.connect().catch((error) => {
-        console.error("Reconnection failed:", error);
+        logger.error("Reconnection failed", { error });
       });
     }, this.reconnectDelay);
 
@@ -298,7 +301,7 @@ export class DebateWebSocketClient {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(message));
     } else {
-      console.warn("WebSocket is not connected");
+      logger.warn("WebSocket is not connected");
     }
   }
 
@@ -362,7 +365,7 @@ export class DebateWebSocketClient {
     // Reset reconnection state
     this.reconnectAttempts = 0;
     this.reconnectDelay = 1000;
-    
+
     // Note: We keep the token cached even after disconnect
     // so it can be reused if reconnecting soon
   }

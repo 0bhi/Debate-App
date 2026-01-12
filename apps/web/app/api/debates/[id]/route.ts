@@ -62,19 +62,9 @@ export async function GET(
         errorMessage.includes("ENOTFOUND") ||
         errorMessage.includes("ECONNRESET")
       ) {
-        const baseMessage =
-          "Failed to connect to debate server. Please ensure the server is running.";
-        const devDetails =
-          process.env.NODE_ENV === "development"
-            ? `Attempted to connect to: ${serverUrl}/debates/${sessionId}. Error: ${errorMessage}`
-            : undefined;
-
         return NextResponse.json(
           {
-            error: baseMessage,
-            details: devDetails,
-            serverUrl:
-              process.env.NODE_ENV === "development" ? serverUrl : undefined,
+            error: "Failed to connect to debate server. Please ensure the server is running.",
           },
           { status: 503 }
         );
@@ -84,8 +74,6 @@ export async function GET(
       return NextResponse.json(
         {
           error: "Failed to connect to debate server",
-          details:
-            process.env.NODE_ENV === "development" ? errorMessage : undefined,
         },
         { status: 503 }
       );
@@ -161,8 +149,6 @@ export async function GET(
     return NextResponse.json(
       {
         error: "Failed to retrieve debate session",
-        details:
-          process.env.NODE_ENV === "development" ? errorMessage : undefined,
       },
       { status: 500 }
     );

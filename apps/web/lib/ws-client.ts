@@ -10,12 +10,17 @@ export class DebateWebSocketClient {
   private url: string;
   private sessionId: string;
   private userId?: string;
+  private authToken: string | null = null;
+  private tokenExpiry: number | null = null; // Track when token expires
   private eventHandlers = new Map<string, Set<WSEventHandler>>();
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private reconnectDelay = 1000; // Start with 1 second
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private isManualDisconnect = false; // Track manual disconnects to prevent reconnection
+  private connectionPromise: Promise<void> | null = null; // Track ongoing connection attempts
+  private lastConnectionAttempt: number = 0; // Track last connection attempt time
+  private readonly CONNECTION_THROTTLE_MS = 500; // Minimum time between connection attempts
 
   constructor(sessionId: string, userId?: string, baseUrl?: string) {
     this.sessionId = sessionId;
@@ -24,14 +29,131 @@ export class DebateWebSocketClient {
       baseUrl ||
       (process.env.NEXT_PUBLIC_WS_URL as string) ||
       "ws://localhost:3001";
-    const params = new URLSearchParams({ sessionId });
-    if (userId) {
-      params.append("userId", userId);
-    }
-    this.url = `${resolvedBaseUrl}?${params.toString()}`;
+    // URL will be built in connect() after fetching token
+    this.url = `${resolvedBaseUrl}?sessionId=${sessionId}`;
   }
 
-  connect(): Promise<void> {
+  /**
+   * Fetch authentication token from the API
+   * Caches the token and only fetches a new one if the current token is missing or expired
+   */
+  private async fetchAuthToken(forceRefresh: boolean = false): Promise<string | null> {
+    // Check if we have a valid cached token (valid for at least 5 more minutes)
+    const now = Date.now();
+    const fiveMinutes = 5 * 60 * 1000; // 5 minutes in milliseconds
+    
+    if (!forceRefresh && this.authToken && this.tokenExpiry) {
+      const timeUntilExpiry = this.tokenExpiry - now;
+      if (timeUntilExpiry > fiveMinutes) {
+        // Token is still valid, return cached token
+        return this.authToken;
+      }
+    }
+
+    try {
+      const response = await fetch("/api/ws/token", {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include", // Include cookies for authentication
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorMessage = `Failed to fetch WebSocket token: ${response.status}`;
+        try {
+          const errorData = JSON.parse(errorText);
+          errorMessage = errorData.error || errorMessage;
+        } catch {
+          // If parsing fails, use the status text
+          errorMessage = errorText || errorMessage;
+        }
+        
+        if (response.status === 401) {
+          console.error("Authentication required for WebSocket token:", errorMessage);
+        } else {
+          console.error("Failed to fetch WebSocket token:", errorMessage);
+        }
+        return null;
+      }
+      
+      const data = await response.json();
+      const token = data.token || null;
+      
+      if (token) {
+        this.authToken = token;
+        // Token expires in 1 hour, set expiry to 55 minutes to be safe
+        this.tokenExpiry = now + (55 * 60 * 1000);
+      }
+      
+      return token;
+    } catch (error) {
+      // Handle network errors more gracefully
+      if (error instanceof TypeError && error.message === "Failed to fetch") {
+        console.error(
+          "Network error: Unable to reach the server. Please check if the server is running and accessible.",
+          error
+        );
+      } else {
+        console.error("Error fetching WebSocket token:", error);
+      }
+      return null;
+    }
+  }
+
+  /**
+   * Build WebSocket URL with authentication token
+   */
+  private buildUrl(baseUrl: string, token: string | null): string {
+    const params = new URLSearchParams({ sessionId: this.sessionId });
+    if (token) {
+      params.append("token", token);
+    }
+    // Keep userId for backward compatibility (though server will use token)
+    if (this.userId) {
+      params.append("userId", this.userId);
+    }
+    return `${baseUrl}?${params.toString()}`;
+  }
+
+  async connect(): Promise<void> {
+    // Throttle connection attempts to prevent rapid reconnection loops
+    const now = Date.now();
+    const timeSinceLastAttempt = now - this.lastConnectionAttempt;
+    if (timeSinceLastAttempt < this.CONNECTION_THROTTLE_MS && this.connectionPromise) {
+      // Return existing connection promise if we're throttling
+      return this.connectionPromise;
+    }
+
+    // If there's an ongoing connection attempt, return that promise
+    if (this.connectionPromise) {
+      return this.connectionPromise;
+    }
+
+    this.lastConnectionAttempt = now;
+
+    // Create connection promise
+    this.connectionPromise = this._doConnect().finally(() => {
+      // Clear the promise after connection completes (success or failure)
+      this.connectionPromise = null;
+    });
+
+    return this.connectionPromise;
+  }
+
+  private async _doConnect(): Promise<void> {
+    // Fetch authentication token first (will use cached token if valid)
+    const token = await this.fetchAuthToken();
+    if (!token) {
+      throw new Error("Failed to obtain authentication token");
+    }
+
+    // Build URL with token
+    const resolvedBaseUrl =
+      (process.env.NEXT_PUBLIC_WS_URL as string) || "ws://localhost:3001";
+    this.url = this.buildUrl(resolvedBaseUrl, this.authToken);
+
     return new Promise((resolve, reject) => {
       // Prevent duplicate connection attempts
       if (this.ws) {
@@ -149,15 +271,19 @@ export class DebateWebSocketClient {
 
     this.reconnectAttempts++;
 
-    this.reconnectTimer = setTimeout(() => {
-      // Rebuild URL with userId for reconnection
+    this.reconnectTimer = setTimeout(async () => {
+      // Refresh token on reconnection (will use cached token if still valid)
+      const token = await this.fetchAuthToken();
+      if (!token) {
+        console.error("Failed to get token for reconnection");
+        this.handleDisconnect(); // Try again
+        return;
+      }
+      
+      // Rebuild URL with token for reconnection
       const resolvedBaseUrl =
         (process.env.NEXT_PUBLIC_WS_URL as string) || "ws://localhost:3001";
-      const params = new URLSearchParams({ sessionId: this.sessionId });
-      if (this.userId) {
-        params.append("userId", this.userId);
-      }
-      this.url = `${resolvedBaseUrl}?${params.toString()}`;
+      this.url = this.buildUrl(resolvedBaseUrl, token);
 
       this.connect().catch((error) => {
         console.error("Reconnection failed:", error);
@@ -236,6 +362,9 @@ export class DebateWebSocketClient {
     // Reset reconnection state
     this.reconnectAttempts = 0;
     this.reconnectDelay = 1000;
+    
+    // Note: We keep the token cached even after disconnect
+    // so it can be reused if reconnecting soon
   }
 
   isConnected(): boolean {

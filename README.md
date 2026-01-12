@@ -59,6 +59,7 @@ debate-app/
    S3_BUCKET=debate-assets
    WS_PORT=3001
    HTTP_PORT=3002
+   NEXTAUTH_SECRET=your-random-secret-here  # Must match the value in apps/web/.env
    ```
 
 3. **Start infrastructure services:**

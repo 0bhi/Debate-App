@@ -71,8 +71,12 @@ class ApiClient {
         errorMessage = "Resource not found";
       } else if (response.status === 500) {
         errorMessage = "Internal server error";
+      } else if (response.status === 502) {
+        errorMessage = "Bad gateway. The debate server returned an error.";
       } else if (response.status === 503) {
-        errorMessage = "Service temporarily unavailable. Please try again later.";
+        errorMessage = "Service temporarily unavailable. Please ensure the debate server is running.";
+      } else if (response.status === 504) {
+        errorMessage = "Request timed out. The debate server did not respond in time.";
       }
 
       // Try to parse error response, but handle non-JSON or empty responses
@@ -84,7 +88,24 @@ class ApiClient {
           const text = await response.text();
           if (text && text.trim()) {
             const error = JSON.parse(text);
+            // Prefer error.error or error.message from server response
             errorMessage = error.error || error.message || errorMessage;
+            
+            // In development, include additional details if available
+            // Format for better display in console and UI
+            if (process.env.NODE_ENV === "development") {
+              const details: string[] = [];
+              if (error.details) {
+                details.push(`Details: ${error.details}`);
+              }
+              if (error.serverUrl) {
+                details.push(`Server URL: ${error.serverUrl}`);
+              }
+              if (details.length > 0) {
+                // Use a separator that works well in both console and UI
+                errorMessage = `${errorMessage} | ${details.join(" | ")}`;
+              }
+            }
             
             // If it's a rate limit error, provide more context
             if (error.code === "RATE_LIMIT_EXCEEDED" || response.status === 429) {

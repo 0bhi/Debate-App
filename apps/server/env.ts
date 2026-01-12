@@ -28,6 +28,24 @@ const envSchema = z.object({
     .transform((val: string) => parseInt(val, 10))
     .default("3"),
 
+  // HTTP API rate limiting
+  HTTP_RATE_LIMIT_REQUESTS_PER_MINUTE: z
+    .string()
+    .transform((val: string) => parseInt(val, 10))
+    .default("100"), // General API rate limit per IP
+  HTTP_RATE_LIMIT_WINDOW_SECONDS: z
+    .string()
+    .transform((val: string) => parseInt(val, 10))
+    .default("60"), // 1 minute window
+  HTTP_RATE_LIMIT_POST_REQUESTS_PER_MINUTE: z
+    .string()
+    .transform((val: string) => parseInt(val, 10))
+    .default("30"), // Stricter limit for POST endpoints
+  HTTP_REQUEST_SIZE_LIMIT: z
+    .string()
+    .transform((val: string) => parseInt(val, 10))
+    .default("10485760"), // 10MB default (in bytes)
+
   // Gemini API rate limiting (requests per minute)
   // Free tier: ~15 RPM, Paid tier: higher limits
   GEMINI_RATE_LIMIT_RPM: z
@@ -46,12 +64,6 @@ const envSchema = z.object({
     .default("3001"),
   WS_PUBLIC_URL: z.string().url().optional(),
 
-  // HTTP Server
-  SERVER_PORT: z
-    .string()
-    .transform((val: string) => parseInt(val, 10))
-    .default("3002"),
-
   // HTTP API
   HTTP_PORT: z
     .string()
@@ -65,8 +77,36 @@ const envSchema = z.object({
 
   // CORS
   CORS_ALLOWED_ORIGINS: z.string().optional(),
+
+  // NextAuth (for WebSocket authentication)
+  NEXTAUTH_SECRET: z.string().min(1),
 });
 
-export const env = envSchema.parse(process.env);
+// Parse environment variables with better error handling
+function getEnv() {
+  try {
+    return envSchema.parse(process.env);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      const missingVars = error.errors
+        .filter((e) => e.code === "invalid_type" && e.received === "undefined")
+        .map((e) => e.path.join("."))
+        .join(", ");
+
+      if (missingVars) {
+        throw new Error(
+          `Missing required environment variables: ${missingVars}\n` +
+            `Please check your .env file in apps/server directory.\n` +
+            `Required variables: ${missingVars}\n` +
+            `\nFor NEXTAUTH_SECRET, use the same value as in apps/web/.env\n` +
+            `You can generate one with: openssl rand -base64 32`
+        );
+      }
+    }
+    throw error;
+  }
+}
+
+export const env = getEnv();
 
 export type Env = z.infer<typeof envSchema>;

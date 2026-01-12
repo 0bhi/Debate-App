@@ -76,9 +76,21 @@ export const useDebateStore = create<DebateStore>()(
           const sessionState = await apiClient.getDebate(sessionId);
           set({ sessionState });
         } catch (error) {
-          const errorMessage =
+          let errorMessage =
             error instanceof Error ? error.message : "Failed to load debate";
-          set({ error: errorMessage });
+
+          // Extract user-friendly message (before pipe separator for dev details)
+          const userMessage = errorMessage.split(" | ")[0];
+
+          // Log full error details to console for debugging
+          if (
+            process.env.NODE_ENV === "development" &&
+            errorMessage.includes(" | ")
+          ) {
+            console.error("Debate load error details:", errorMessage);
+          }
+
+          set({ error: userMessage });
           throw error;
         }
       },

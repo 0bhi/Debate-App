@@ -1,14 +1,13 @@
 import { WebSocketServer, WebSocket } from "ws";
 import { IncomingMessage } from "http";
 import { parse as parseUrl } from "url";
-import { parse as parseQuery } from "querystring";
-import { verify } from "jsonwebtoken";
-import { getServerSession } from "next-auth";
 import { redisSub } from "../services/redis";
 import { debateOrchestrator } from "../orchestrator/debateOrchestrator";
 import { logger } from "../utils/logger";
 import { env } from "../env";
-import { ClientMessage, ServerMessage, ClientMessageSchema } from "@repo/types";
+import { ServerMessage, ClientMessageSchema } from "@repo/types";
+import { verifyNextAuthToken, extractTokenFromRequest } from "../services/auth";
+import { prisma } from "@repo/database";
 
 interface AuthenticatedWebSocket extends WebSocket {
   sessionId?: string;
@@ -48,29 +47,86 @@ export class DebateWebSocketServer {
         return false;
       }
 
-      // In development, be more lenient with session verification
-      if (env.NODE_ENV === "development") {
-        logger.info("Development mode: allowing WebSocket connection", { sessionId });
-        return true;
-      }
-
-      // Verify session exists
+      // Verify debate session exists
       const session = await debateOrchestrator.loadSessionState(sessionId);
       if (!session) {
         logger.warn("WebSocket connection rejected: invalid sessionId", {
           sessionId,
+          environment: env.NODE_ENV,
         });
         return false;
       }
 
+      // Extract and verify JWT token
+      const token = extractTokenFromRequest(info.req);
+      if (!token) {
+        logger.warn(
+          "WebSocket connection rejected: missing authentication token",
+          {
+            sessionId,
+          }
+        );
+        return false;
+      }
+
+      const decoded = verifyNextAuthToken(token);
+      if (!decoded || !decoded.sub) {
+        logger.warn(
+          "WebSocket connection rejected: invalid authentication token",
+          {
+            sessionId,
+          }
+        );
+        return false;
+      }
+
+      const userId = decoded.sub;
+
+      // Verify user has access to this debate session
+      // User can access if they are:
+      // 1. The creator (userId matches session.userId)
+      // 2. Debater A (userId matches session.debaterAId)
+      // 3. Debater B (userId matches session.debaterBId)
+      // 4. Or if the session is public (no specific access control needed for viewing)
+      // For now, we allow authenticated users to connect to any session
+      // but we'll enforce permissions in message handlers
+
+      // Verify user exists in database
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { id: true },
+      });
+
+      if (!user) {
+        logger.warn("WebSocket connection rejected: user not found", {
+          sessionId,
+          userId,
+        });
+        return false;
+      }
+
+      // Store authenticated userId in request for use in handleConnection
+      (info.req as any).authenticatedUserId = userId;
+
+      // Only log in development if verbose logging is enabled
+      // Reduce log noise from frequent connections
+      if (
+        env.NODE_ENV === "development" &&
+        process.env.VERBOSE_WS_LOGS === "true"
+      ) {
+        logger.info("WebSocket connection verified", {
+          sessionId,
+          userId,
+        });
+      }
+
       return true;
     } catch (error) {
-      logger.error("WebSocket verification failed", { error });
-      // In development, allow connection even if verification fails
-      if (env.NODE_ENV === "development") {
-        logger.warn("Development mode: allowing connection despite verification error");
-        return true;
-      }
+      logger.error("WebSocket verification failed", {
+        error,
+        environment: env.NODE_ENV,
+      });
+      // Always reject on verification errors for security
       return false;
     }
   }
@@ -94,10 +150,37 @@ export class DebateWebSocketServer {
   ): Promise<void> {
     const url = parseUrl(req.url || "", true);
     const sessionId = url.query.sessionId as string;
-    const userId = url.query.userId as string | undefined;
+
+    // Get authenticated userId from verifyClient (stored in req)
+    // Fallback: extract and verify token again if not found (handles race conditions)
+    let userId = (req as any).authenticatedUserId as string | undefined;
+
+    if (!userId) {
+      // Fallback: try to extract and verify token directly
+      // This handles cases where verifyClient and handleConnection might have race conditions
+      const token = extractTokenFromRequest(req);
+      if (token) {
+        const decoded = verifyNextAuthToken(token);
+        if (decoded?.sub) {
+          userId = decoded.sub;
+          // Store it for consistency
+          (req as any).authenticatedUserId = userId;
+        }
+      }
+
+      if (!userId) {
+        // Only log error if we truly can't get the userId
+        logger.error("WebSocket connection missing authenticated userId", {
+          sessionId,
+          hasToken: !!token,
+        });
+        ws.close(1008, "Authentication failed");
+        return;
+      }
+    }
 
     ws.sessionId = sessionId;
-    ws.userId = userId;
+    ws.userId = userId; // Use authenticated userId from JWT token
     ws.isAlive = true;
 
     // Add client to session group early to ensure proper registration
@@ -106,11 +189,18 @@ export class DebateWebSocketServer {
     }
     this.clients.get(sessionId)!.add(ws);
 
-    logger.info("WebSocket client connected", {
-      sessionId,
-      userId,
-      clientCount: this.clients.get(sessionId)?.size || 0,
-    });
+    // Only log connection in development with verbose logging
+    // This reduces log noise from frequent reconnections
+    if (
+      env.NODE_ENV === "development" &&
+      process.env.VERBOSE_WS_LOGS === "true"
+    ) {
+      logger.info("WebSocket client connected", {
+        sessionId,
+        userId,
+        clientCount: this.clients.get(sessionId)?.size || 0,
+      });
+    }
 
     // Load session state and handle debater assignment
     try {
@@ -208,7 +298,9 @@ export class DebateWebSocketServer {
 
       switch (message.type) {
         case "JOIN_SESSION":
-          logger.info("Handling JOIN_SESSION", { sessionId: message.sessionId });
+          logger.info("Handling JOIN_SESSION", {
+            sessionId: message.sessionId,
+          });
           await this.handleJoinSession(ws, message.sessionId);
           break;
 
@@ -217,7 +309,11 @@ export class DebateWebSocketServer {
           break;
 
         case "SUBMIT_ARGUMENT":
-          await this.handleSubmitArgument(ws, message.sessionId, message.argument);
+          await this.handleSubmitArgument(
+            ws,
+            message.sessionId,
+            message.argument
+          );
           break;
 
         case "PING":
@@ -280,17 +376,24 @@ export class DebateWebSocketServer {
         ) {
           try {
             // Double-check status hasn't changed (race condition protection)
-            const verifyState = await debateOrchestrator.loadSessionState(sessionId);
+            const verifyState =
+              await debateOrchestrator.loadSessionState(sessionId);
             if (verifyState?.status === "CREATED") {
               await debateOrchestrator.startDebate(sessionId);
             } else {
-              logger.info("Debate status changed before auto-start in handleJoinSession, skipping", {
-                sessionId,
-                status: verifyState?.status,
-              });
+              logger.info(
+                "Debate status changed before auto-start in handleJoinSession, skipping",
+                {
+                  sessionId,
+                  status: verifyState?.status,
+                }
+              );
             }
           } catch (error) {
-            logger.error("Failed to auto-start debate in handleJoinSession", { sessionId, error });
+            logger.error("Failed to auto-start debate in handleJoinSession", {
+              sessionId,
+              error,
+            });
           }
         }
       }
@@ -334,22 +437,28 @@ export class DebateWebSocketServer {
       // If user is not assigned and debater B slot is open, they need an invitation
       if (sessionState.debaterAId && !sessionState.debaterBId) {
         if (sessionState.debaterAId !== userId) {
-          logger.info("Debater B slot is open but user needs invitation token", {
-            sessionId,
-            userId,
-          });
+          logger.info(
+            "Debater B slot is open but user needs invitation token",
+            {
+              sessionId,
+              userId,
+            }
+          );
           // Don't auto-assign - user must use invitation link
           return;
         }
       }
 
       // Both debaters are already assigned, user is neither
-      logger.info("Debate already has both debaters assigned or user needs invitation", {
-        sessionId,
-        userId,
-        debaterAId: sessionState.debaterAId,
-        debaterBId: sessionState.debaterBId,
-      });
+      logger.info(
+        "Debate already has both debaters assigned or user needs invitation",
+        {
+          sessionId,
+          userId,
+          debaterAId: sessionState.debaterAId,
+          debaterBId: sessionState.debaterBId,
+        }
+      );
     } catch (error) {
       logger.error("Failed to assign debater", { sessionId, userId, error });
       throw error;
@@ -384,10 +493,30 @@ export class DebateWebSocketServer {
         throw new Error("User not authenticated");
       }
 
+      // Verify user is authorized to submit arguments (must be debater A or B)
+      const sessionState = await debateOrchestrator.loadSessionState(sessionId);
+      if (!sessionState) {
+        throw new Error("Debate session not found");
+      }
+
+      const isDebaterA = sessionState.debaterAId === userId;
+      const isDebaterB = sessionState.debaterBId === userId;
+
+      if (!isDebaterA && !isDebaterB) {
+        logger.warn("Unauthorized argument submission attempt", {
+          sessionId,
+          userId,
+          debaterAId: sessionState.debaterAId,
+          debaterBId: sessionState.debaterBId,
+        });
+        throw new Error("Only assigned debaters can submit arguments");
+      }
+
       await debateOrchestrator.submitArgument(sessionId, userId, argument);
     } catch (error: any) {
       logger.error("Failed to submit argument", {
         sessionId,
+        userId: ws.userId,
         error,
       });
       this.sendToClient(ws, {
@@ -503,12 +632,4 @@ export function getWebSocketServer(): DebateWebSocketServer {
     wsServer = new DebateWebSocketServer();
   }
   return wsServer;
-}
-
-export function closeWebSocketServer(): Promise<void> | undefined {
-  if (wsServer) {
-    const closePromise = wsServer.close();
-    wsServer = null;
-    return closePromise;
-  }
 }

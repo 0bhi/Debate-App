@@ -52,10 +52,10 @@ export class RateLimiter {
       if (currentCount >= maxRequests) {
         // Rate limit exceeded - find the oldest request to calculate retry time
         const oldestRequest = await redis.zrange(redisKey, 0, 0, "WITHSCORES");
-        if (oldestRequest && oldestRequest.length >= 2) {
+        if (oldestRequest && oldestRequest.length >= 2 && oldestRequest[1]) {
           const oldestTimestamp = parseInt(oldestRequest[1], 10);
           const retryAfter = oldestTimestamp + windowSeconds - now + 1; // +1 for safety margin
-          
+
           logger.warn("Rate limit exceeded", {
             key,
             currentCount,
@@ -83,7 +83,7 @@ export class RateLimiter {
       if (recordRequest) {
         const requestId = `${now}-${Math.random()}`; // Unique ID for this request
         await redis.zadd(redisKey, now, requestId);
-        
+
         // Set expiration on the key to prevent Redis memory bloat
         await redis.expire(redisKey, windowSeconds + 60); // Extra 60s buffer
       }
@@ -144,7 +144,7 @@ export class RateLimiter {
     while (Date.now() - startTime < maxWaitMs) {
       // Check without recording during wait
       const result = await this.checkRateLimit(options, false);
-      
+
       if (result.allowed) {
         return result;
       }
@@ -173,4 +173,3 @@ export class RateLimiter {
 }
 
 export const rateLimiter = new RateLimiter();
-

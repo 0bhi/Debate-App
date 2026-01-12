@@ -36,6 +36,7 @@ export function DebateRoom({ sessionId }: DebateRoomProps) {
   const [invitationAccepted, setInvitationAccepted] = useState(false);
   const isInitializedRef = useRef(false);
   const currentSessionIdRef = useRef<string | null>(null);
+  const isInitializingRef = useRef(false); // Track if initialization is in progress
   const inviteToken = searchParams.get("invite");
 
   // Check authentication BEFORE trying to load debate when invite token is present
@@ -65,21 +66,37 @@ export function DebateRoom({ sessionId }: DebateRoomProps) {
         return;
       }
 
+      // Prevent concurrent initialization attempts
+      if (isInitializingRef.current) {
+        return;
+      }
+
       // Don't initialize if we have an invite token but user is not authenticated
       if (inviteToken && sessionStatus === "unauthenticated") {
         return;
       }
 
+      // Don't initialize if user ID is not available yet
+      const userId = (session?.user as any)?.id;
+      if (!userId && sessionStatus === "authenticated") {
+        // User is authenticated but ID is missing - wait a bit
+        return;
+      }
+
+      isInitializingRef.current = true;
       try {
-        const userId = (session?.user as any)?.id;
         await loadDebate(sessionId);
         await connectWebSocket(sessionId, userId);
         isInitializedRef.current = true;
         currentSessionIdRef.current = sessionId;
       } catch (error) {
         console.error("Failed to initialize debate room:", error);
-        toast.error("Failed to connect to debate");
+        // Error message is already set in the store by loadDebate/connectWebSocket
+        // The useEffect below will show it via toast, so we don't need to show another toast here
+        // Just log the error for debugging
         isInitializedRef.current = false;
+      } finally {
+        isInitializingRef.current = false;
       }
     };
 

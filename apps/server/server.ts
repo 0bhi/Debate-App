@@ -31,18 +31,62 @@ async function parseJsonBody(req: IncomingMessage): Promise<any> {
   });
 }
 
+function getAllowedOrigins(): string[] {
+  if (env.NODE_ENV === "development") {
+    // In development, allow localhost origins
+    return [
+      "http://localhost:3000",
+      "http://127.0.0.1:3000",
+      "http://localhost:3001",
+      "http://127.0.0.1:3001",
+    ];
+  }
+
+  // In production, use environment variable
+  if (env.CORS_ALLOWED_ORIGINS) {
+    return env.CORS_ALLOWED_ORIGINS.split(",").map((origin) => origin.trim());
+  }
+
+  // Fallback: no origins allowed in production if not configured
+  return [];
+}
+
+function getCorsOrigin(
+  req: IncomingMessage,
+  allowedOrigins: string[]
+): string | null {
+  const origin = req.headers.origin;
+  if (!origin) {
+    return null;
+  }
+
+  // Check if the origin is in the allowed list
+  if (allowedOrigins.includes(origin)) {
+    return origin;
+  }
+
+  return null;
+}
+
 export function createHttpServer() {
+  const allowedOrigins = getAllowedOrigins();
+
   const server = http.createServer(async (req, res) => {
     const url = parseUrl(req.url || "", true);
     const method = (req.method || "GET").toUpperCase();
 
-    // CORS for ease of development and separate deploys
-    res.setHeader("Access-Control-Allow-Origin", "*");
+    // Environment-based CORS
+    const corsOrigin = getCorsOrigin(req, allowedOrigins);
+    if (corsOrigin) {
+      res.setHeader("Access-Control-Allow-Origin", corsOrigin);
+    }
     res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
     res.setHeader(
       "Access-Control-Allow-Headers",
       "content-type, authorization"
     );
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+
     if (method === "OPTIONS") {
       res.writeHead(204);
       return res.end();
@@ -56,7 +100,10 @@ export function createHttpServer() {
         // Extract userId from body or use debaterAId if userId not provided
         // This allows tracking who created the debate
         const userId = (body as any).userId || validated.debaterAId;
-        const result = await debateOrchestrator.createDebateSession(validated, userId);
+        const result = await debateOrchestrator.createDebateSession(
+          validated,
+          userId
+        );
         return sendJson(res, 200, result);
       }
 
@@ -67,9 +114,11 @@ export function createHttpServer() {
         const body = await parseJsonBody(req);
         const position = (body as any).position; // "A" or "B"
         const userId = (body as any).userId;
-        
+
         if (!position || !["A", "B"].includes(position)) {
-          return sendJson(res, 400, { error: "Invalid position. Must be 'A' or 'B'" });
+          return sendJson(res, 400, {
+            error: "Invalid position. Must be 'A' or 'B'",
+          });
         }
         if (!userId) {
           return sendJson(res, 400, { error: "userId is required" });
@@ -92,16 +141,24 @@ export function createHttpServer() {
       }
 
       // POST /debates/:id/retry-judge
-      const retryJudgeMatch = url.pathname?.match(/^\/debates\/([^/]+)\/retry-judge$/);
+      const retryJudgeMatch = url.pathname?.match(
+        /^\/debates\/([^/]+)\/retry-judge$/
+      );
       if (method === "POST" && retryJudgeMatch) {
         const id = retryJudgeMatch[1]!; // assert non-null
         try {
           await debateOrchestrator.retryJudging(id);
-          return sendJson(res, 200, { success: true, message: "Judging retry initiated" });
+          return sendJson(res, 200, {
+            success: true,
+            message: "Judging retry initiated",
+          });
         } catch (error: any) {
           logger.error("Failed to retry judging", { sessionId: id, error });
           return sendJson(res, 400, {
-            error: error instanceof Error ? error.message : "Failed to retry judging",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Failed to retry judging",
           });
         }
       }
@@ -112,13 +169,17 @@ export function createHttpServer() {
         const id = inviteMatch[1]!;
         const inviteLink = await debateOrchestrator.getInvitationLink(id);
         if (!inviteLink) {
-          return sendJson(res, 404, { error: "Debate session not found or no invitation token" });
+          return sendJson(res, 404, {
+            error: "Debate session not found or no invitation token",
+          });
         }
         return sendJson(res, 200, inviteLink);
       }
 
       // POST /debates/:id/accept-invitation
-      const acceptMatch = url.pathname?.match(/^\/debates\/([^/]+)\/accept-invitation$/);
+      const acceptMatch = url.pathname?.match(
+        /^\/debates\/([^/]+)\/accept-invitation$/
+      );
       if (method === "POST" && acceptMatch) {
         const id = acceptMatch[1]!;
         const body = await parseJsonBody(req);
@@ -132,9 +193,15 @@ export function createHttpServer() {
           return sendJson(res, 400, { error: "userId is required" });
         }
 
-        const success = await debateOrchestrator.acceptInvitation(id, token, userId);
+        const success = await debateOrchestrator.acceptInvitation(
+          id,
+          token,
+          userId
+        );
         if (!success) {
-          return sendJson(res, 400, { error: "Invalid or expired invitation token" });
+          return sendJson(res, 400, {
+            error: "Invalid or expired invitation token",
+          });
         }
         return sendJson(res, 200, { success: true });
       }

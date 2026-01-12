@@ -9,7 +9,6 @@ const __dirname = dirname(__filename);
 config({ path: resolve(__dirname, ".env") });
 
 import { getWebSocketServer } from "./ws";
-import { initializeQueues } from "./queues";
 import { logger } from "./utils/logger";
 import { env } from "./env";
 
@@ -27,20 +26,10 @@ async function startServer() {
   try {
     logger.info("Starting AI Debate Club server...");
 
-    // Initialize queues
-    logger.info("Initializing queues...");
-    try {
-      await initializeQueues();
-      logger.info("Queues initialized successfully");
-    } catch (error) {
-      logger.warn("Failed to initialize queues, continuing without queues", {
-        error,
-      });
-    }
-
     // Recover pending turns for running debates (after server restart)
     try {
-      const { debateOrchestrator } = await import("./orchestrator/debateOrchestrator");
+      const { debateOrchestrator } =
+        await import("./orchestrator/debateOrchestrator");
       logger.info("Recovering pending turns for running debates...");
       await debateOrchestrator.recoverPendingTurns();
       logger.info("Pending turns recovery completed");
@@ -77,7 +66,9 @@ async function startServer() {
 
       await Promise.all([
         wsServer.close(),
-        new Promise((res, rej) => httpServer?.close((e: any) => (e ? rej(e) : res(null)))),
+        new Promise((res, rej) =>
+          httpServer?.close((e: any) => (e ? rej(e) : res(null)))
+        ),
       ]);
 
       process.exit(0);
@@ -88,7 +79,9 @@ async function startServer() {
 
       await Promise.all([
         wsServer.close(),
-        new Promise((res, rej) => httpServer?.close((e: any) => (e ? rej(e) : res(null)))),
+        new Promise((res, rej) =>
+          httpServer?.close((e: any) => (e ? rej(e) : res(null)))
+        ),
       ]);
 
       process.exit(0);

@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { CreateDebateRequest } from "../lib/validators";
 import toast from "react-hot-toast";
-import { useSession } from "next-auth/react";
 
 interface TopicFormProps {
   onSubmit: (request: CreateDebateRequest) => Promise<void>;
@@ -11,7 +10,6 @@ interface TopicFormProps {
 }
 
 export function TopicForm({ onSubmit, isLoading = false }: TopicFormProps) {
-  const { data: session } = useSession();
   const [topic, setTopic] = useState("");
   const [rounds, setRounds] = useState(2);
   const [debaterBEmail, setDebaterBEmail] = useState("");
@@ -29,11 +27,7 @@ export function TopicForm({ onSubmit, isLoading = false }: TopicFormProps) {
       return;
     }
 
-    if (!session?.user) {
-      toast.error("Please sign in to create a debate");
-      return;
-    }
-
+    // Let the parent component handle authentication redirect
     try {
       await onSubmit({
         topic: topic.trim(),
@@ -106,7 +100,7 @@ export function TopicForm({ onSubmit, isLoading = false }: TopicFormProps) {
         {/* Submit Button */}
         <button
           type="submit"
-          disabled={isLoading || !topic.trim() || !session?.user}
+          disabled={isLoading || !topic.trim()}
           className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 disabled:cursor-not-allowed text-white font-medium rounded-md transition-colors focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
         >
           {isLoading ? (

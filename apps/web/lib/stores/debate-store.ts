@@ -1,10 +1,6 @@
 import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
-import {
-  SessionState,
-  CreateDebateRequest,
-  ServerMessage,
-} from "@repo/types";
+import { SessionState, CreateDebateRequest, ServerMessage } from "@repo/types";
 import { DebateWebSocketClient } from "../ws-client";
 import { apiClient } from "../api";
 
@@ -16,13 +12,15 @@ interface DebateStore {
   currentTurn: {
     speaker: "A" | "B" | null;
     text: string;
-    isStreaming: boolean;
   };
   error: string | null;
   isRetryingJudging: boolean; // Track if retry is in progress
 
   // Actions
-  createDebate: (request: CreateDebateRequest, userId?: string) => Promise<string>;
+  createDebate: (
+    request: CreateDebateRequest,
+    userId?: string
+  ) => Promise<string>;
   loadDebate: (sessionId: string) => Promise<void>;
   connectWebSocket: (sessionId: string, userId?: string) => Promise<void>;
   disconnectWebSocket: () => void;
@@ -32,13 +30,14 @@ interface DebateStore {
 
   // Internal
   setSessionState: (state: SessionState) => void;
+  setCurrentTurn: (speaker: "A" | "B" | null) => void;
   setError: (error: string) => void;
   handleWebSocketMessage: (message: ServerMessage) => void;
 }
 
 export const useDebateStore = create<DebateStore>()(
   subscribeWithSelector((set, get) => {
-    // Debounce timer for TURN_END reloads
+    // Debounce timer for session state reloads
     let reloadTimer: ReturnType<typeof setTimeout> | null = null;
 
     return {
@@ -49,7 +48,6 @@ export const useDebateStore = create<DebateStore>()(
       currentTurn: {
         speaker: null,
         text: "",
-        isStreaming: false,
       },
       error: null,
       isRetryingJudging: false,
@@ -92,7 +90,10 @@ export const useDebateStore = create<DebateStore>()(
           // Only disconnect if we're connected to a different session or not connected at all
           if (wsClient) {
             // Check if already connected to the same session
-            if (wsClient.isConnected() && wsClient.getSessionId() === sessionId) {
+            if (
+              wsClient.isConnected() &&
+              wsClient.getSessionId() === sessionId
+            ) {
               // Already connected to the same session, no need to reconnect
               return;
             }
@@ -142,26 +143,22 @@ export const useDebateStore = create<DebateStore>()(
 
       retryJudging: async (sessionId: string) => {
         const { isRetryingJudging } = get();
-        
+
         // Prevent duplicate retry calls
         if (isRetryingJudging) {
-          console.log("Retry judging already in progress, skipping duplicate call");
           return;
         }
 
         try {
           set({ error: null, isRetryingJudging: true });
-          console.log(`[Retry Judging] Starting retry for session ${sessionId}`);
-          
+
           await apiClient.retryJudging(sessionId);
-          
-          console.log(`[Retry Judging] Retry API call completed for session ${sessionId}`);
+
           // Don't call loadDebate here - WebSocket will broadcast the updated state
           // This prevents unnecessary API calls
         } catch (error) {
           const errorMessage =
             error instanceof Error ? error.message : "Failed to retry judging";
-          console.error(`[Retry Judging] Error for session ${sessionId}:`, errorMessage);
           set({ error: errorMessage });
           throw error;
         } finally {
@@ -176,6 +173,14 @@ export const useDebateStore = create<DebateStore>()(
 
       // Internal methods
       setSessionState: (sessionState: SessionState) => set({ sessionState }),
+
+      setCurrentTurn: (speaker: "A" | "B" | null) =>
+        set({
+          currentTurn: {
+            speaker,
+            text: "",
+          },
+        }),
 
       setError: (error: string) => set({ error }),
 
@@ -243,47 +248,8 @@ export const useDebateStore = create<DebateStore>()(
               currentTurn: {
                 speaker: message.speaker,
                 text: "",
-                isStreaming: false,
               },
             });
-            break;
-          }
-
-          case "TURN_START":
-            // Just show a simple indicator that someone is speaking
-            set({
-              currentTurn: {
-                speaker: message.speaker,
-                text: "Speaking...",
-                isStreaming: true,
-              },
-            });
-            break;
-
-          case "TURN_TOKEN":
-            // Ignore individual tokens - we'll wait for the complete turn
-            break;
-
-          case "TURN_END": {
-            // Clear the speaking indicator
-            set({
-              currentTurn: {
-                speaker: null,
-                text: "",
-                isStreaming: false,
-              },
-            });
-
-            // Debounce the DB reload to avoid rapid re-renders
-            if (reloadTimer) clearTimeout(reloadTimer);
-            if (sessionState) {
-              const id = sessionState.id;
-              reloadTimer = setTimeout(() => {
-                get()
-                  .loadDebate(id)
-                  .catch(() => {});
-              }, 200);
-            }
             break;
           }
 
@@ -298,7 +264,7 @@ export const useDebateStore = create<DebateStore>()(
                   status: "FINISHED" as any,
                 },
               });
-              
+
               // Reload from database after a short delay to ensure consistency
               if (reloadTimer) clearTimeout(reloadTimer);
               reloadTimer = setTimeout(() => {

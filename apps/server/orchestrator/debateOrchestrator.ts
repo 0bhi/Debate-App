@@ -326,12 +326,14 @@ export class DebateOrchestrator {
 
       this.pendingTurns.delete(sessionId);
 
-      await this.broadcastToSession(sessionId, {
-        type: "TURN_END",
-        text: argument.trim(),
-        orderIndex: pendingTurn.orderIndex,
-        speaker: pendingTurn.speaker,
-      });
+      // Broadcast updated session state after turn is submitted
+      const updatedState = await this.loadSessionState(sessionId);
+      if (updatedState) {
+        await this.broadcastToSession(sessionId, {
+          type: "SESSION_STATE",
+          data: updatedState,
+        } as any);
+      }
 
       await this.initiateNextTurn(sessionId);
     } catch (error) {

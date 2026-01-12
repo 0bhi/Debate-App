@@ -4,7 +4,6 @@ import { signIn, getProviders } from "next-auth/react";
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Header } from "../../../components/Header";
 import { Brain, Github, Mail, Lock, Eye, EyeOff } from "lucide-react";
 
 export default function SignIn() {
@@ -61,13 +60,10 @@ export default function SignIn() {
 
   if (!providers) {
     return (
-      <div className="min-h-screen">
-        <Header />
-        <div className="flex items-center justify-center min-h-[calc(100vh-4rem)]">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-            <p className="text-slate-600 dark:text-slate-400">Loading...</p>
-          </div>
+      <div className="flex items-center justify-center min-h-[calc(100vh-4rem)]">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-slate-600 dark:text-slate-400">Loading...</p>
         </div>
       </div>
     );
@@ -78,7 +74,6 @@ export default function SignIn() {
 
   return (
     <div className="min-h-screen">
-      <Header />
       <div className="flex items-center justify-center min-h-[calc(100vh-4rem)] p-4">
         <div className="w-full max-w-md">
           <div className="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-8 border border-slate-200 dark:border-slate-700">

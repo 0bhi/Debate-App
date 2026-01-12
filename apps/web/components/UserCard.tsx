@@ -104,7 +104,7 @@ export function UserCard({ user, onUpdate }: UserCardProps) {
   const friendRequestStatus = getFriendRequestStatus();
 
   return (
-    <div className="bg-white dark:bg-slate-800 rounded-lg p-4 shadow-md hover:shadow-lg transition-shadow">
+    <div className="bg-card border border-border rounded-lg p-4 shadow-sm hover:shadow-md transition-all">
       <div className="flex items-start gap-4">
         {/* Avatar */}
         <div className="flex-shrink-0">
@@ -112,7 +112,7 @@ export function UserCard({ user, onUpdate }: UserCardProps) {
             <img
               src={user.image}
               alt={user.name || user.email}
-              className="w-16 h-16 rounded-full object-cover border-2 border-slate-300 dark:border-slate-600"
+              className="w-16 h-16 rounded-full object-cover border-2 border-border ring-2 ring-primary/10"
             />
           ) : (
             <div className="w-16 h-16">
@@ -123,10 +123,10 @@ export function UserCard({ user, onUpdate }: UserCardProps) {
 
         {/* User Info */}
         <div className="flex-1 min-w-0">
-          <h3 className="font-semibold text-slate-900 dark:text-white truncate">
+          <h3 className="font-semibold text-card-foreground truncate">
             {user.name || "Unknown User"}
           </h3>
-          <p className="text-sm text-slate-600 dark:text-slate-400 truncate">
+          <p className="text-sm text-muted-foreground truncate">
             {user.email}
           </p>
         </div>
@@ -139,11 +139,11 @@ export function UserCard({ user, onUpdate }: UserCardProps) {
               disabled={isLoading || friendRequestStatus.disabled}
               className={`
                 flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium
-                transition-colors
+                transition-opacity
                 ${
                   friendRequestStatus.disabled
-                    ? "bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 cursor-not-allowed"
-                    : "bg-blue-500 hover:bg-blue-600 text-white"
+                    ? "bg-muted text-muted-foreground cursor-not-allowed opacity-50"
+                    : "bg-primary text-primary-foreground hover:opacity-90"
                 }
               `}
             >
@@ -158,11 +158,11 @@ export function UserCard({ user, onUpdate }: UserCardProps) {
               disabled={isLoading || user.friendRequest?.status === "PENDING"}
               className={`
                 flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium
-                transition-colors
+                transition-opacity
                 ${
                   user.friendRequest?.status === "PENDING"
-                    ? "bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 cursor-not-allowed"
-                    : "bg-amber-500 hover:bg-amber-600 text-white"
+                    ? "bg-muted text-muted-foreground cursor-not-allowed opacity-50"
+                    : "bg-accent text-accent-foreground hover:opacity-90"
                 }
               `}
             >
@@ -175,7 +175,7 @@ export function UserCard({ user, onUpdate }: UserCardProps) {
             <button
               onClick={() => setShowChallengeModal(true)}
               disabled={isLoading}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium bg-amber-500 hover:bg-amber-600 text-white transition-colors"
+              className="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium bg-accent text-accent-foreground hover:opacity-90 transition-opacity"
             >
               <Sword className="w-4 h-4" />
               Challenge
@@ -186,19 +186,19 @@ export function UserCard({ user, onUpdate }: UserCardProps) {
 
       {/* Challenge Modal */}
       {showChallengeModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-slate-800 rounded-lg p-6 max-w-md w-full mx-4">
-            <h2 className="text-xl font-bold mb-4 text-slate-900 dark:text-white">
+        <div className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-card border border-border rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
+            <h2 className="text-xl font-bold mb-4 text-card-foreground">
               Challenge {user.name || user.email}
             </h2>
-            <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+            <p className="text-sm text-muted-foreground mb-4">
               Enter the topic for your debate challenge:
             </p>
             <textarea
               value={challengeTopic}
               onChange={(e) => setChallengeTopic(e.target.value)}
               placeholder="e.g., Should AI be regulated by governments?"
-              className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500 mb-4"
+              className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background mb-4 transition-all"
               rows={4}
             />
             <div className="flex gap-2 justify-end">
@@ -207,14 +207,14 @@ export function UserCard({ user, onUpdate }: UserCardProps) {
                   setShowChallengeModal(false);
                   setChallengeTopic("");
                 }}
-                className="px-4 py-2 rounded-md bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors"
+                className="px-4 py-2 rounded-md bg-muted text-muted-foreground hover:bg-muted/80 transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={handleChallengeUser}
                 disabled={isLoading || !challengeTopic.trim()}
-                className="px-4 py-2 rounded-md bg-amber-500 hover:bg-amber-600 text-white disabled:bg-slate-300 disabled:text-slate-500 transition-colors"
+                className="px-4 py-2 rounded-md bg-accent text-accent-foreground hover:opacity-90 disabled:bg-muted disabled:text-muted-foreground transition-opacity"
               >
                 {isLoading ? "Sending..." : "Send Challenge"}
               </button>

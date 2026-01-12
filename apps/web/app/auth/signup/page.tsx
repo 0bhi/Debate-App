@@ -4,7 +4,6 @@ import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
 import Link from "next/link";
-import { Header } from "../../../components/Header";
 import { Brain, Mail, Lock, User, Eye, EyeOff } from "lucide-react";
 
 export default function SignUp() {
@@ -67,7 +66,6 @@ export default function SignUp() {
 
   return (
     <div className="min-h-screen">
-      <Header />
       <div className="flex items-center justify-center min-h-[calc(100vh-4rem)] p-4">
         <div className="w-full max-w-md">
           <div className="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-8 border border-slate-200 dark:border-slate-700">

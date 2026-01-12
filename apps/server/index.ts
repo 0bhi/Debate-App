@@ -50,31 +50,26 @@ async function startServer() {
 
     // Start WebSocket server
     try {
-      logger.info("🔍 Attempting to start WebSocket server...");
-      logger.info(`🔍 WS_PORT from env: ${env.WS_PORT}`);
       wsServer = getWebSocketServer();
-      logger.info("✅ WebSocket server started successfully");
     } catch (error) {
-      logger.error("❌ Failed to start WebSocket server:", error);
-      throw error; // Re-throw to see the full error
+      logger.error("Failed to start WebSocket server", { error });
+      throw error;
     }
 
     // Start HTTP API server
     try {
       const { createHttpServer } = await import("./server");
       httpServer = createHttpServer();
-      httpServer.listen(env.HTTP_PORT, () => {
-        logger.info(`✅ HTTP API server listening on port ${env.HTTP_PORT}`);
-      });
+      httpServer.listen(env.HTTP_PORT);
     } catch (error) {
-      logger.error("❌ Failed to start HTTP API server:", error);
+      logger.error("Failed to start HTTP API server", { error });
       throw error;
     }
 
-    logger.info(`🚀 AI Debate Club server running!`);
-    logger.info(`📡 WebSocket server: ws://localhost:${env.WS_PORT}`);
-    logger.info(`🛠  HTTP API server: http://localhost:${env.HTTP_PORT}`);
-    logger.info(`🎬 Next.js app: http://localhost:3000`);
+    logger.info("Server running", {
+      wsPort: env.WS_PORT,
+      httpPort: env.HTTP_PORT,
+    });
 
     // Graceful shutdown
     process.on("SIGTERM", async () => {

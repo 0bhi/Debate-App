@@ -1,74 +1,104 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
+import { useDebateStore } from "../lib/stores/debate-store";
 import { Send } from "lucide-react";
+import toast from "react-hot-toast";
 
 interface ArgumentInputProps {
-  onSubmit: (argument: string) => Promise<void>;
-  isSubmitting?: boolean;
+  sessionId: string;
+  disabled?: boolean;
 }
 
-export function ArgumentInput({ onSubmit, isSubmitting = false }: ArgumentInputProps) {
+export function ArgumentInput({
+  sessionId,
+  disabled = false,
+}: ArgumentInputProps) {
   const [argument, setArgument] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const { submitArgument } = useDebateStore();
+
+  // Auto-resize textarea
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (textarea) {
+      // Reset height to auto to get the correct scrollHeight
+      textarea.style.height = "auto";
+      // Set height to scrollHeight, but with min and max constraints
+      const newHeight = Math.min(Math.max(textarea.scrollHeight, 48), 200);
+      textarea.style.height = `${newHeight}px`;
+    }
+  }, [argument]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!argument.trim() || argument.trim().length < 10) {
+
+    if (!argument.trim()) {
+      return;
+    }
+
+    if (argument.trim().length < 10) {
+      toast.error("Argument must be at least 10 characters long");
       return;
     }
 
     if (argument.trim().length > 2000) {
+      toast.error("Argument must be less than 2000 characters");
       return;
     }
 
+    setIsSubmitting(true);
     try {
-      await onSubmit(argument.trim());
+      await submitArgument(sessionId, argument.trim());
       setArgument("");
-    } catch (error) {
-      console.error("Failed to submit argument:", error);
+      // Reset textarea height
+      if (textareaRef.current) {
+        textareaRef.current.style.height = "48px";
+      }
+    } catch (error: any) {
+      toast.error(error.message || "Failed to submit argument");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Submit on Enter (but allow Shift+Enter for new line)
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      // Trigger form submit
+      const form = e.currentTarget.closest("form");
+      if (form) {
+        form.requestSubmit();
+      }
     }
   };
 
   return (
-    <div className="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-4">
-      <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-3">
-        Your Turn - Submit Your Argument
-      </h3>
-      <form onSubmit={handleSubmit} className="space-y-3">
+    <form onSubmit={handleSubmit} className="w-full">
+      <div className="flex items-end gap-2 bg-card border border-border rounded-lg shadow-sm p-2 focus-within:border-border focus-within:ring-1 focus-within:ring-border">
         <textarea
+          ref={textareaRef}
           value={argument}
           onChange={(e) => setArgument(e.target.value)}
-          placeholder="Type your argument here... (minimum 10 characters)"
-          rows={4}
-          className="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-slate-700 dark:border-slate-600 dark:text-white resize-none"
-          maxLength={2000}
-          disabled={isSubmitting}
+          onKeyDown={handleKeyDown}
+          placeholder={
+            disabled
+              ? "Wait for your turn to submit an argument..."
+              : "Type your argument here... (Press Enter to submit, Shift+Enter for new line)"
+          }
+          className="flex-1 resize-none bg-transparent border-none outline-none text-foreground placeholder:text-muted-foreground text-sm py-2 px-3 min-h-[48px] max-h-[200px] overflow-y-auto focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
+          style={{ height: "48px" }}
         />
-        <div className="flex items-center justify-between">
-          <div className="text-xs text-slate-500">
-            {argument.length}/2000 characters (minimum 10)
-          </div>
-          <button
-            type="submit"
-            disabled={isSubmitting || argument.trim().length < 10 || argument.trim().length > 2000}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 disabled:cursor-not-allowed text-white font-medium rounded-md transition-colors focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-          >
-            {isSubmitting ? (
-              <>
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                Submitting...
-              </>
-            ) : (
-              <>
-                <Send className="w-4 h-4" />
-                Submit Argument
-              </>
-            )}
-          </button>
-        </div>
-      </form>
-    </div>
+        <button
+          type="submit"
+          disabled={disabled || isSubmitting || !argument.trim()}
+          className="flex items-center justify-center w-10 h-10 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed transition-colors shrink-0"
+        >
+          <Send className="w-4 h-4" />
+        </button>
+      </div>
+    </form>
   );
 }
-

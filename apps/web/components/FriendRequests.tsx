@@ -125,8 +125,8 @@ export function FriendRequests() {
   if (isLoading) {
     return (
       <div className="text-center py-8">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-2"></div>
-        <p className="text-slate-600 dark:text-slate-400">Loading...</p>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-2"></div>
+        <p className="text-muted-foreground">Loading...</p>
       </div>
     );
   }
@@ -134,33 +134,33 @@ export function FriendRequests() {
   return (
     <div className="w-full">
       {/* Tabs */}
-      <div className="flex gap-2 mb-6 border-b border-slate-200 dark:border-slate-700">
+      <div className="flex gap-2 mb-6 p-1 bg-muted/50 rounded-lg border border-border">
         <button
           onClick={() => setActiveTab("requests")}
-          className={`px-4 py-2 font-medium transition-colors relative ${
+          className={`flex-1 px-4 py-2 font-medium transition-all rounded-md relative ${
             activeTab === "requests"
-              ? "text-blue-600 dark:text-blue-400"
-              : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
+              ? "bg-background text-foreground shadow-sm border border-border"
+              : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
           }`}
         >
           Friend Requests
           {friendRequests.length > 0 && (
-            <span className="ml-2 px-2 py-0.5 text-xs bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400 rounded-full">
+            <span className="ml-2 px-2 py-0.5 text-xs bg-primary/10 text-primary rounded-full font-semibold">
               {friendRequests.length}
             </span>
           )}
         </button>
         <button
           onClick={() => setActiveTab("challenges")}
-          className={`px-4 py-2 font-medium transition-colors relative ${
+          className={`flex-1 px-4 py-2 font-medium transition-all rounded-md relative ${
             activeTab === "challenges"
-              ? "text-blue-600 dark:text-blue-400"
-              : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
+              ? "bg-background text-foreground shadow-sm border border-border"
+              : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
           }`}
         >
           Debate Challenges
           {challenges.length > 0 && (
-            <span className="ml-2 px-2 py-0.5 text-xs bg-amber-100 dark:bg-amber-900 text-amber-600 dark:text-amber-400 rounded-full">
+            <span className="ml-2 px-2 py-0.5 text-xs bg-accent/20 text-accent-foreground rounded-full font-semibold">
               {challenges.length}
             </span>
           )}
@@ -175,40 +175,49 @@ export function FriendRequests() {
               {friendRequests.map((request) => (
                 <div
                   key={request.id}
-                  className="bg-white dark:bg-slate-800 rounded-lg p-4 shadow-md"
+                  className="bg-card border border-border rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow"
                 >
                   <div className="flex items-start gap-4">
                     {request.user.image ? (
                       <img
                         src={request.user.image}
                         alt={request.user.name || request.user.email}
-                        className="w-12 h-12 rounded-full object-cover"
+                        className="w-12 h-12 rounded-full object-cover ring-2 ring-primary/20"
                       />
                     ) : (
-                      <Avatar name={request.user.name || request.user.email} size="sm" />
+                      <div className="w-12 h-12 rounded-full ring-2 ring-primary/20 bg-primary/20 flex items-center justify-center flex-shrink-0">
+                        <span className="text-primary font-semibold text-sm">
+                          {(request.user.name || request.user.email)
+                            .split(" ")
+                            .map((n) => n[0])
+                            .join("")
+                            .toUpperCase()
+                            .slice(0, 2)}
+                        </span>
+                      </div>
                     )}
                     <div className="flex-1 min-w-0">
-                      <h3 className="font-semibold text-slate-900 dark:text-white">
+                      <h3 className="font-semibold text-card-foreground">
                         {request.user.name || "Unknown User"}
                       </h3>
-                      <p className="text-sm text-slate-600 dark:text-slate-400">
+                      <p className="text-sm text-muted-foreground">
                         {request.user.email}
                       </p>
-                      <p className="text-xs text-slate-500 dark:text-slate-500 mt-1">
+                      <p className="text-xs text-muted-foreground/70 mt-1">
                         Sent {new Date(request.createdAt).toLocaleDateString()}
                       </p>
                     </div>
                     <div className="flex gap-2">
                       <button
                         onClick={() => handleRespondToRequest(request.id, "ACCEPT")}
-                        className="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium bg-green-500 hover:bg-green-600 text-white transition-colors"
+                        className="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium bg-primary text-primary-foreground hover:opacity-90 transition-opacity"
                       >
                         <Check className="w-4 h-4" />
                         Accept
                       </button>
                       <button
                         onClick={() => handleRespondToRequest(request.id, "REJECT")}
-                        className="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium bg-red-500 hover:bg-red-600 text-white transition-colors"
+                        className="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium bg-muted text-muted-foreground hover:bg-muted/80 transition-colors"
                       >
                         <X className="w-4 h-4" />
                         Reject
@@ -220,8 +229,8 @@ export function FriendRequests() {
             </div>
           ) : (
             <div className="text-center py-12">
-              <UserPlus className="w-16 h-16 text-slate-300 dark:text-slate-600 mx-auto mb-4" />
-              <p className="text-slate-600 dark:text-slate-400">
+              <UserPlus className="w-16 h-16 text-muted-foreground/30 mx-auto mb-4" />
+              <p className="text-muted-foreground">
                 No pending friend requests
               </p>
             </div>
@@ -237,33 +246,42 @@ export function FriendRequests() {
               {challenges.map((challenge) => (
                 <div
                   key={challenge.id}
-                  className="bg-white dark:bg-slate-800 rounded-lg p-4 shadow-md"
+                  className="bg-card border border-border rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow"
                 >
                   <div className="flex items-start gap-4">
                     {challenge.user.image ? (
                       <img
                         src={challenge.user.image}
                         alt={challenge.user.name || challenge.user.email}
-                        className="w-12 h-12 rounded-full object-cover"
+                        className="w-12 h-12 rounded-full object-cover ring-2 ring-accent/20"
                       />
                     ) : (
-                      <Avatar name={challenge.user.name || challenge.user.email} size="sm" />
+                      <div className="w-12 h-12 rounded-full ring-2 ring-accent/20 bg-accent/20 flex items-center justify-center flex-shrink-0">
+                        <span className="text-accent-foreground font-semibold text-sm">
+                          {(challenge.user.name || challenge.user.email)
+                            .split(" ")
+                            .map((n) => n[0])
+                            .join("")
+                            .toUpperCase()
+                            .slice(0, 2)}
+                        </span>
+                      </div>
                     )}
                     <div className="flex-1 min-w-0">
-                      <h3 className="font-semibold text-slate-900 dark:text-white">
+                      <h3 className="font-semibold text-card-foreground">
                         {challenge.user.name || "Unknown User"}
                       </h3>
-                      <p className="text-sm text-slate-600 dark:text-slate-400 mb-2">
+                      <p className="text-sm text-muted-foreground mb-2">
                         {challenge.user.email}
                       </p>
-                      <div className="bg-slate-100 dark:bg-slate-700 rounded-md p-3 mt-2">
-                        <p className="text-sm font-medium text-slate-900 dark:text-white mb-1">
+                      <div className="bg-muted/50 rounded-md p-3 mt-2">
+                        <p className="text-sm font-medium text-card-foreground mb-1">
                           Debate Topic:
                         </p>
-                        <p className="text-sm text-slate-700 dark:text-slate-300">
+                        <p className="text-sm text-muted-foreground">
                           {challenge.topic}
                         </p>
-                        <p className="text-xs text-slate-500 dark:text-slate-500 mt-2">
+                        <p className="text-xs text-muted-foreground/70 mt-2">
                           {challenge.rounds} rounds • Sent{" "}
                           {new Date(challenge.createdAt).toLocaleDateString()}
                         </p>
@@ -272,7 +290,7 @@ export function FriendRequests() {
                     <div className="flex flex-col gap-2">
                       <button
                         onClick={() => handleAcceptChallenge(challenge.id)}
-                        className="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium bg-amber-500 hover:bg-amber-600 text-white transition-colors"
+                        className="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium bg-accent text-accent-foreground hover:opacity-90 transition-opacity"
                       >
                         <Check className="w-4 h-4" />
                         Accept
@@ -284,8 +302,8 @@ export function FriendRequests() {
             </div>
           ) : (
             <div className="text-center py-12">
-              <Users className="w-16 h-16 text-slate-300 dark:text-slate-600 mx-auto mb-4" />
-              <p className="text-slate-600 dark:text-slate-400">
+              <Users className="w-16 h-16 text-muted-foreground/30 mx-auto mb-4" />
+              <p className="text-muted-foreground">
                 No pending debate challenges
               </p>
             </div>

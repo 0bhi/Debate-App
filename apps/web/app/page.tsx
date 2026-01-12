@@ -1,798 +1,537 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-import { useSession } from "next-auth/react";
-import { motion, useInView, useScroll, useTransform } from "framer-motion";
-import { gsap } from "gsap";
-import { ScrollTrigger } from "gsap/ScrollTrigger";
-import { TopicForm } from "../components/TopicForm";
-import { Header } from "../components/Header";
-import { useDebateStore } from "../lib/stores/debate-store";
+import Link from "next/link";
 import {
   Brain,
-  Zap,
   Users,
-  Trophy,
   MessageSquare,
-  Clock,
-  Shield,
-  ArrowRight,
   Sparkles,
-  TrendingUp,
+  ArrowRight,
   CheckCircle2,
+  Zap,
+  Shield,
+  TrendingUp,
   Star,
 } from "lucide-react";
+import { useSession } from "next-auth/react";
 
-if (typeof window !== "undefined") {
-  gsap.registerPlugin(ScrollTrigger);
-}
-
-// Animation variants
-const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.1,
-      delayChildren: 0.2,
-    },
-  },
-};
-
-const itemVariants = {
-  hidden: { opacity: 0, y: 20 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: {
-      duration: 0.5,
-      ease: "easeOut",
-    },
-  },
-};
-
-const fadeInUp = {
-  hidden: { opacity: 0, y: 30 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: {
-      duration: 0.6,
-      ease: "easeOut",
-    },
-  },
-};
-
-const scaleIn = {
-  hidden: { opacity: 0, scale: 0.9 },
-  visible: {
-    opacity: 1,
-    scale: 1,
-    transition: {
-      duration: 0.5,
-      ease: "easeOut",
-    },
-  },
-};
-
-export default function Home() {
-  const router = useRouter();
-  const { data: session, status } = useSession();
-  const [isCreating, setIsCreating] = useState(false);
-  const { createDebate } = useDebateStore();
-
-  // Redirect logged-in users to dashboard
-  useEffect(() => {
-    if (status === "authenticated" && session?.user) {
-      router.push("/dashboard");
-    }
-  }, [status, session, router]);
-
-  // Refs for GSAP animations
-  const heroRef = useRef<HTMLDivElement>(null);
-  const titleRef = useRef<HTMLHeadingElement>(null);
-  const subtitleRef = useRef<HTMLParagraphElement>(null);
-  const ctaRef = useRef<HTMLDivElement>(null);
-  const floatingElementsRef = useRef<HTMLDivElement>(null);
-
-  // Framer Motion scroll animations
-  const { scrollYProgress } = useScroll();
-  const heroY = useTransform(scrollYProgress, [0, 1], ["0%", "50%"]);
-
-  // Refs for intersection observer
-  const featuresRef = useRef<HTMLDivElement>(null);
-  const statsRef = useRef<HTMLDivElement>(null);
-  const howItWorksRef = useRef<HTMLDivElement>(null);
-  const testimonialsRef = useRef<HTMLDivElement>(null);
-
-  const featuresInView = useInView(featuresRef, { once: true, margin: "-100px" });
-  const statsInView = useInView(statsRef, { once: true, margin: "-100px" });
-  const howItWorksInView = useInView(howItWorksRef, { once: true, margin: "-100px" });
-  const testimonialsInView = useInView(testimonialsRef, { once: true, margin: "-100px" });
-
-  const handleCreateDebate = async (request: any) => {
-    setIsCreating(true);
-    try {
-      const userId = (session?.user as any)?.id;
-      const sessionId = await createDebate(request, userId);
-      router.push(`/debate/${sessionId}`);
-    } catch (error) {
-      console.error("Failed to create debate:", error);
-    } finally {
-      setIsCreating(false);
-    }
-  };
-
-  useEffect(() => {
-    const ctx = gsap.context(() => {
-      // Hero animations with GSAP
-      const tl = gsap.timeline();
-      
-      tl.from(titleRef.current, {
-        opacity: 0,
-        y: 50,
-        duration: 1,
-        ease: "power3.out",
-      })
-        .from(
-          subtitleRef.current,
-          {
-            opacity: 0,
-            y: 30,
-            duration: 0.8,
-            ease: "power2.out",
-          },
-          "-=0.5"
-        )
-        .from(
-          ctaRef.current,
-          {
-            opacity: 0,
-            y: 20,
-            duration: 0.6,
-            ease: "power2.out",
-          },
-          "-=0.4"
-        );
-
-      // Floating elements animation
-      if (floatingElementsRef.current) {
-        gsap.to(floatingElementsRef.current.children, {
-          y: "random(-30, 30)",
-          x: "random(-20, 20)",
-          rotation: "random(-5, 5)",
-          duration: "random(2, 4)",
-          ease: "sine.inOut",
-          repeat: -1,
-          yoyo: true,
-          stagger: 0.2,
-        });
-      }
-    });
-
-    return () => ctx.revert();
-  }, []);
-
-  const features = [
-    {
-      icon: Zap,
-      title: "Real-time Debates",
-      description:
-        "Engage in live, turn-based debates with instant updates and seamless communication.",
-      color: "text-yellow-500",
-      bgColor: "bg-yellow-50 dark:bg-yellow-900/20",
-    },
-    {
-      icon: Users,
-      title: "Human vs Human",
-      description:
-        "Debate with real people. Create a debate room and invite your opponent to join.",
-      color: "text-teal-500",
-      bgColor: "bg-teal-50 dark:bg-teal-900/20",
-    },
-    {
-      icon: Trophy,
-      title: "AI-Powered Judging",
-      description:
-        "Get instant, detailed feedback from AI judges or vote manually with comprehensive scoring.",
-      color: "text-amber-500",
-      bgColor: "bg-amber-50 dark:bg-amber-900/20",
-    },
-    {
-      icon: MessageSquare,
-      title: "Rich Transcripts",
-      description:
-        "Every debate is recorded with full transcripts you can review and share anytime.",
-      color: "text-green-500",
-      bgColor: "bg-green-50 dark:bg-green-900/20",
-    },
-    {
-      icon: Clock,
-      title: "Flexible Timing",
-      description:
-        "Set your own pace with configurable rounds and time limits that suit your style.",
-      color: "text-orange-500",
-      bgColor: "bg-orange-50 dark:bg-orange-900/20",
-    },
-    {
-      icon: Shield,
-      title: "Secure & Private",
-      description:
-        "Your debates are secure and private. Share only what you want with complete control.",
-      color: "text-red-500",
-      bgColor: "bg-red-50 dark:bg-red-900/20",
-    },
-  ];
-
-  const stats = [
-    { number: 1000, suffix: "+", label: "Active Debates" },
-    { number: 500, suffix: "+", label: "Users" },
-    { number: 95, suffix: "%", label: "Satisfaction Rate" },
-    { number: 24, suffix: "/7", label: "Support" },
-  ];
-
-  const testimonials = [
-    {
-      name: "Sarah Chen",
-      role: "Debate Coach",
-      content:
-        "This platform has revolutionized how my students practice. The AI judging is incredibly detailed and helpful.",
-      rating: 5,
-    },
-    {
-      name: "Michael Rodriguez",
-      role: "Law Student",
-      content:
-        "Perfect for sharpening my argumentation skills. The real-time format keeps me on my toes.",
-      rating: 5,
-    },
-    {
-      name: "Emily Watson",
-      role: "Content Creator",
-      content:
-        "I love how easy it is to create debates and the beautiful interface makes the whole experience enjoyable.",
-      rating: 5,
-    },
-  ];
-
-  // Show loading state while checking authentication
-  if (status === "loading") {
-    return (
-      <div className="min-h-screen">
-        <Header />
-        <div className="flex items-center justify-center min-h-[calc(100vh-4rem)]">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-            <p className="text-slate-600 dark:text-slate-400">Loading...</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Don't render landing page if user is logged in (will redirect)
-  if (status === "authenticated" && session?.user) {
-    return null;
-  }
+export default function LandingPage() {
+  const { status } = useSession();
+  const isAuthenticated = status === "authenticated";
 
   return (
-    <div className="min-h-screen overflow-hidden">
-      <Header />
-      
+    <div className="min-h-screen bg-gradient-to-b from-background via-background to-muted/20">
       {/* Hero Section */}
-      <section
-        ref={heroRef}
-        className="relative min-h-[90vh] flex items-center justify-center overflow-hidden bg-gradient-to-br from-slate-50 via-slate-100 to-slate-200 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900"
-      >
-        {/* Animated Background Elements */}
-        <div
-          ref={floatingElementsRef}
-          className="absolute inset-0 overflow-hidden pointer-events-none"
-        >
-          <motion.div
-            className="absolute top-20 left-10 w-72 h-72 bg-amber-100 dark:bg-amber-900/20 rounded-full mix-blend-multiply dark:mix-blend-soft-light filter blur-xl opacity-50"
-            animate={{
-              x: [0, 30, 0],
-              y: [0, -50, 0],
-              scale: [1, 1.1, 1],
-            }}
-            transition={{
-              duration: 7,
-              repeat: Infinity,
-              ease: "easeInOut",
-            }}
-          />
-          <motion.div
-            className="absolute top-40 right-10 w-72 h-72 bg-stone-100 dark:bg-stone-800/20 rounded-full mix-blend-multiply dark:mix-blend-soft-light filter blur-xl opacity-50"
-            animate={{
-              x: [0, -30, 0],
-              y: [0, 50, 0],
-              scale: [1, 1.2, 1],
-            }}
-            transition={{
-              duration: 8,
-              repeat: Infinity,
-              ease: "easeInOut",
-              delay: 1,
-            }}
-          />
-          <motion.div
-            className="absolute -bottom-8 left-1/2 w-72 h-72 bg-neutral-100 dark:bg-neutral-800/20 rounded-full mix-blend-multiply dark:mix-blend-soft-light filter blur-xl opacity-50"
-            animate={{
-              x: [0, 20, 0],
-              y: [0, -30, 0],
-              scale: [1, 0.9, 1],
-            }}
-            transition={{
-              duration: 9,
-              repeat: Infinity,
-              ease: "easeInOut",
-              delay: 2,
-            }}
-          />
-        </div>
+      <section className="relative overflow-hidden pt-20 pb-16 sm:pt-24 sm:pb-20">
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px]" />
+        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center">
+            {/* Badge */}
+            <div className="inline-flex items-center gap-2 px-4 py-2 bg-primary/10 border border-primary/20 rounded-full mb-6">
+              <Sparkles className="w-4 h-4 text-primary" />
+              <span className="text-sm font-medium text-primary">
+                Real-time Debate Platform
+              </span>
+            </div>
 
-        <motion.div
-          style={{ y: heroY }}
-          className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 text-center"
-        >
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.5 }}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm border border-amber-200 dark:border-amber-800 mb-8"
-          >
-            <motion.div
-              animate={{ rotate: [0, 10, -10, 0] }}
-              transition={{ duration: 2, repeat: Infinity, repeatDelay: 3 }}
-            >
-              <Sparkles className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-            </motion.div>
-            <span className="text-sm font-medium text-amber-600 dark:text-amber-400">
-              AI-Powered Debate Platform
-            </span>
-          </motion.div>
+            {/* Main Headline */}
+            <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight text-foreground mb-6">
+              Sharpen Your Mind Through
+              <span className="block bg-gradient-to-r from-primary via-purple-500 to-accent bg-clip-text text-transparent">
+                Intelligent Debate
+              </span>
+            </h1>
 
-          <h1
-            ref={titleRef}
-            className="text-5xl md:text-7xl font-bold text-slate-900 dark:text-white mb-6 leading-tight"
-          >
-            Master the Art of
-            <br />
-            <motion.span
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.5, duration: 1 }}
-              className="text-amber-600 dark:text-amber-400"
-            >
-              Persuasion
-            </motion.span>
-          </h1>
+            {/* Subheadline */}
+            <p className="mx-auto max-w-2xl text-lg sm:text-xl text-muted-foreground mb-8 leading-relaxed">
+              Engage in real-time debates with friends, challenge perspectives,
+              and get AI-powered feedback to improve your argumentation skills.
+              Think critically, argue persuasively.
+            </p>
 
-          <p
-            ref={subtitleRef}
-            className="text-xl md:text-2xl text-slate-600 dark:text-slate-300 mb-12 max-w-3xl mx-auto leading-relaxed"
-          >
-            Engage in real-time debates with intelligent opponents. Present your
-            arguments, respond strategically, and get evaluated by advanced AI
-            judges.
-          </p>
-
-          <div ref={ctaRef} className="flex flex-col sm:flex-row gap-4 justify-center items-center">
-            <motion.button
-              onClick={() => {
-                document
-                  .getElementById("create-debate")
-                  ?.scrollIntoView({ behavior: "smooth" });
-              }}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              className="group px-8 py-4 bg-slate-900 dark:bg-slate-700 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 flex items-center gap-2 hover:bg-slate-800 dark:hover:bg-slate-600"
-            >
-              Start Debating
-              <motion.div
-                animate={{ x: [0, 5, 0] }}
-                transition={{ duration: 1.5, repeat: Infinity }}
-              >
-                <ArrowRight className="w-5 h-5" />
-              </motion.div>
-            </motion.button>
-            <motion.button
-              onClick={() => {
-                document
-                  .getElementById("features")
-                  ?.scrollIntoView({ behavior: "smooth" });
-              }}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              className="px-8 py-4 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-semibold rounded-xl shadow-lg hover:shadow-xl border-2 border-slate-200 dark:border-slate-700 transition-all duration-300"
-            >
-              Learn More
-            </motion.button>
-          </div>
-        </motion.div>
-      </section>
-
-      {/* Stats Section */}
-      <section
-        ref={statsRef}
-        className="py-16 bg-white dark:bg-slate-800 border-y border-slate-200 dark:border-slate-700"
-      >
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <motion.div
-            variants={containerVariants}
-            initial="hidden"
-            animate={statsInView ? "visible" : "hidden"}
-            className="grid grid-cols-2 md:grid-cols-4 gap-8"
-          >
-            {stats.map((stat, index) => (
-              <motion.div
-                key={index}
-                variants={itemVariants}
-                className="text-center"
-              >
-                <motion.div
-                  initial={{ scale: 0 }}
-                  animate={statsInView ? { scale: 1 } : { scale: 0 }}
-                  transition={{
-                    type: "spring",
-                    stiffness: 200,
-                    damping: 15,
-                    delay: index * 0.1,
-                  }}
-                  className="text-4xl md:text-5xl font-bold text-slate-900 dark:text-white mb-2"
+            {/* CTA Buttons */}
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-12">
+              {isAuthenticated ? (
+                <Link
+                  href="/dashboard"
+                  className="group inline-flex items-center gap-2 px-8 py-4 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-lg shadow-lg shadow-primary/25 transition-all duration-200 hover:shadow-xl hover:shadow-primary/30 hover:scale-105"
                 >
-                  <AnimatedCounter target={stat.number} suffix={stat.suffix} />
-                </motion.div>
-                <div className="text-sm md:text-base text-slate-600 dark:text-slate-400">
-                  {stat.label}
-                </div>
-              </motion.div>
-            ))}
-          </motion.div>
+                  Go to Dashboard
+                  <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                </Link>
+              ) : (
+                <>
+                  <Link
+                    href="/auth/signup"
+                    className="group inline-flex items-center gap-2 px-8 py-4 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-lg shadow-lg shadow-primary/25 transition-all duration-200 hover:shadow-xl hover:shadow-primary/30 hover:scale-105"
+                  >
+                    Get Started Free
+                    <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                  </Link>
+                  <Link
+                    href="/auth/signin"
+                    className="inline-flex items-center gap-2 px-8 py-4 bg-card hover:bg-card/80 text-foreground font-semibold border border-border rounded-lg transition-all duration-200 hover:scale-105"
+                  >
+                    Sign In
+                  </Link>
+                </>
+              )}
+            </div>
+
+            {/* Trust Indicators */}
+            <div className="flex flex-wrap items-center justify-center gap-8 text-sm text-muted-foreground">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-green-500" />
+                <span>No credit card required</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-green-500" />
+                <span>Free forever</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-green-500" />
+                <span>Instant access</span>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
       {/* Features Section */}
-      <section
-        id="features"
-        ref={featuresRef}
-        className="py-24 bg-gradient-to-b from-white to-slate-50 dark:from-slate-900 dark:to-slate-800"
-      >
+      <section className="py-20 bg-muted/30">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: "-100px" }}
-            transition={{ duration: 0.6 }}
-            className="text-center mb-16"
-          >
-            <h2 className="text-4xl md:text-5xl font-bold text-slate-900 dark:text-white mb-4">
-              Everything You Need to Debate
+          <div className="text-center mb-16">
+            <h2 className="text-3xl sm:text-4xl font-bold text-foreground mb-4">
+              Everything You Need to Debate Better
             </h2>
-            <p className="text-xl text-slate-600 dark:text-slate-400 max-w-2xl mx-auto">
-              Powerful features designed to enhance your debating experience
+            <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+              Powerful features designed to help you articulate your thoughts
+              clearly and win arguments
             </p>
-          </motion.div>
+          </div>
 
-          <motion.div
-            variants={containerVariants}
-            initial="hidden"
-            animate={featuresInView ? "visible" : "hidden"}
-            className="grid md:grid-cols-2 lg:grid-cols-3 gap-8"
-          >
-            {features.map((feature, index) => {
-              const Icon = feature.icon;
-              return (
-                <motion.div
-                  key={index}
-                  variants={itemVariants}
-                  whileHover={{ y: -8, scale: 1.02 }}
-                  className="group p-8 bg-white dark:bg-slate-800 rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 border border-slate-200 dark:border-slate-700"
-                >
-                  <motion.div
-                    whileHover={{ rotate: [0, -10, 10, 0] }}
-                    transition={{ duration: 0.5 }}
-                    className={`w-14 h-14 ${feature.bgColor} rounded-xl flex items-center justify-center mb-6`}
-                  >
-                    <Icon className={`w-7 h-7 ${feature.color}`} />
-                  </motion.div>
-                  <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-3">
-                    {feature.title}
-                  </h3>
-                  <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
-                    {feature.description}
-                  </p>
-                </motion.div>
-              );
-            })}
-          </motion.div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {/* Feature 1 */}
+            <div className="group p-8 bg-card rounded-xl border border-border hover:border-primary/50 transition-all duration-200 hover:shadow-lg">
+              <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
+                <MessageSquare className="w-6 h-6 text-primary" />
+              </div>
+              <h3 className="text-xl font-semibold text-foreground mb-2">
+                Real-Time Debates
+              </h3>
+              <p className="text-muted-foreground">
+                Engage in live debates with instant messaging. Watch arguments
+                unfold in real-time with seamless turn-taking.
+              </p>
+            </div>
+
+            {/* Feature 2 */}
+            <div className="group p-8 bg-card rounded-xl border border-border hover:border-primary/50 transition-all duration-200 hover:shadow-lg">
+              <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
+                <Sparkles className="w-6 h-6 text-primary" />
+              </div>
+              <h3 className="text-xl font-semibold text-foreground mb-2">
+                AI-Powered Judge
+              </h3>
+              <p className="text-muted-foreground">
+                Get instant feedback from our AI judge. Analyze argument
+                quality, logic, and persuasiveness to improve your skills.
+              </p>
+            </div>
+
+            {/* Feature 3 */}
+            <div className="group p-8 bg-card rounded-xl border border-border hover:border-primary/50 transition-all duration-200 hover:shadow-lg">
+              <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
+                <Users className="w-6 h-6 text-primary" />
+              </div>
+              <h3 className="text-xl font-semibold text-foreground mb-2">
+                Challenge Friends
+              </h3>
+              <p className="text-muted-foreground">
+                Invite friends to debate on any topic. Build your network and
+                compete with debaters from around the world.
+              </p>
+            </div>
+
+            {/* Feature 4 */}
+            <div className="group p-8 bg-card rounded-xl border border-border hover:border-primary/50 transition-all duration-200 hover:shadow-lg">
+              <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
+                <Zap className="w-6 h-6 text-primary" />
+              </div>
+              <h3 className="text-xl font-semibold text-foreground mb-2">
+                Lightning Fast
+              </h3>
+              <p className="text-muted-foreground">
+                Experience instant responses and smooth interactions. No lag, no
+                delays—just pure debating action.
+              </p>
+            </div>
+
+            {/* Feature 5 */}
+            <div className="group p-8 bg-card rounded-xl border border-border hover:border-primary/50 transition-all duration-200 hover:shadow-lg">
+              <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
+                <Shield className="w-6 h-6 text-primary" />
+              </div>
+              <h3 className="text-xl font-semibold text-foreground mb-2">
+                Safe & Secure
+              </h3>
+              <p className="text-muted-foreground">
+                Your debates are private and secure. We protect your data and
+                ensure respectful conversations.
+              </p>
+            </div>
+
+            {/* Feature 6 */}
+            <div className="group p-8 bg-card rounded-xl border border-border hover:border-primary/50 transition-all duration-200 hover:shadow-lg">
+              <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
+                <TrendingUp className="w-6 h-6 text-primary" />
+              </div>
+              <h3 className="text-xl font-semibold text-foreground mb-2">
+                Track Progress
+              </h3>
+              <p className="text-muted-foreground">
+                Monitor your debate history and see how you improve over time.
+                Review past arguments and learn from each session.
+              </p>
+            </div>
+          </div>
         </div>
       </section>
 
       {/* How It Works Section */}
-      <section ref={howItWorksRef} className="py-24 bg-white dark:bg-slate-900">
+      <section className="py-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: "-100px" }}
-            transition={{ duration: 0.6 }}
-            className="text-center mb-16"
-          >
-            <h2 className="text-4xl md:text-5xl font-bold text-slate-900 dark:text-white mb-4">
+          <div className="text-center mb-16">
+            <h2 className="text-3xl sm:text-4xl font-bold text-foreground mb-4">
               How It Works
             </h2>
-            <p className="text-xl text-slate-600 dark:text-slate-400">
-              Get started in three simple steps
+            <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+              Start debating in minutes with our simple three-step process
             </p>
-          </motion.div>
+          </div>
 
-          <motion.div
-            variants={containerVariants}
-            initial="hidden"
-            animate={howItWorksInView ? "visible" : "hidden"}
-            className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto"
-          >
-            {[
-              {
-                step: "01",
-                title: "Create a Debate",
-                description:
-                  "Sign in and create a new debate room. Set your topic, choose rounds, and configure judging options.",
-              },
-              {
-                step: "02",
-                title: "Invite Your Opponent",
-                description:
-                  "Share your debate room with another user. They'll join as your opponent and the debate begins.",
-              },
-              {
-                step: "03",
-                title: "Debate & Get Judged",
-                description:
-                  "Take turns presenting arguments. Get real-time feedback and comprehensive scoring from AI judges.",
-              },
-            ].map((item, index) => (
-              <motion.div
-                key={index}
-                variants={itemVariants}
-                whileHover={{ scale: 1.05 }}
-                className="relative text-center"
-              >
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.5 }}
-                  whileInView={{ opacity: 1, scale: 1 }}
-                  viewport={{ once: true }}
-                  transition={{
-                    type: "spring",
-                    stiffness: 200,
-                    delay: index * 0.2,
-                  }}
-                  className="text-6xl font-bold text-slate-200 dark:text-slate-700 mb-4"
-                >
-                  {item.step}
-                </motion.div>
-                <h3 className="text-2xl font-bold text-slate-900 dark:text-white mb-4">
-                  {item.title}
-                </h3>
-                <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
-                  {item.description}
-                </p>
-                {index < 2 && (
-                  <motion.div
-                    initial={{ opacity: 0, x: -20 }}
-                    whileInView={{ opacity: 1, x: 0 }}
-                    viewport={{ once: true }}
-                    transition={{ delay: index * 0.2 + 0.3 }}
-                    className="hidden md:block absolute top-12 -right-4 text-slate-300 dark:text-slate-600"
-                  >
-                    <ArrowRight className="w-8 h-8" />
-                  </motion.div>
-                )}
-              </motion.div>
-            ))}
-          </motion.div>
-        </div>
-      </section>
-
-      {/* Testimonials Section */}
-      <section
-        ref={testimonialsRef}
-        className="py-24 bg-gradient-to-b from-slate-50 to-white dark:from-slate-800 dark:to-slate-900"
-      >
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: "-100px" }}
-            transition={{ duration: 0.6 }}
-            className="text-center mb-16"
-          >
-            <h2 className="text-4xl md:text-5xl font-bold text-slate-900 dark:text-white mb-4">
-              Loved by Debators Worldwide
-            </h2>
-            <p className="text-xl text-slate-600 dark:text-slate-400">
-              See what our community has to say
-            </p>
-          </motion.div>
-
-          <motion.div
-            variants={containerVariants}
-            initial="hidden"
-            animate={testimonialsInView ? "visible" : "hidden"}
-            className="grid md:grid-cols-3 gap-8"
-          >
-            {testimonials.map((testimonial, index) => (
-              <motion.div
-                key={index}
-                variants={itemVariants}
-                whileHover={{ y: -5, scale: 1.02 }}
-                className="p-8 bg-white dark:bg-slate-800 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700"
-              >
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  whileInView={{ opacity: 1 }}
-                  viewport={{ once: true }}
-                  transition={{ delay: index * 0.1 + 0.2 }}
-                  className="flex gap-1 mb-4"
-                >
-                  {[...Array(testimonial.rating)].map((_, i) => (
-                    <motion.div
-                      key={i}
-                      initial={{ scale: 0, rotate: -180 }}
-                      whileInView={{ scale: 1, rotate: 0 }}
-                      viewport={{ once: true }}
-                      transition={{
-                        delay: index * 0.1 + i * 0.1,
-                        type: "spring",
-                        stiffness: 200,
-                      }}
-                    >
-                      <Star className="w-5 h-5 fill-yellow-400 text-yellow-400" />
-                    </motion.div>
-                  ))}
-                </motion.div>
-                <p className="text-slate-600 dark:text-slate-400 mb-6 leading-relaxed">
-                  "{testimonial.content}"
-                </p>
-                <div>
-                  <div className="font-semibold text-slate-900 dark:text-white">
-                    {testimonial.name}
-                  </div>
-                  <div className="text-sm text-slate-500 dark:text-slate-400">
-                    {testimonial.role}
-                  </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto">
+            {/* Step 1 */}
+            <div className="relative">
+              <div className="text-center">
+                <div className="w-16 h-16 bg-gradient-to-br from-primary to-purple-500 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl font-bold text-white shadow-lg">
+                  1
                 </div>
-              </motion.div>
-            ))}
-          </motion.div>
-        </div>
-      </section>
+                <h3 className="text-xl font-semibold text-foreground mb-2">
+                  Create or Join
+                </h3>
+                <p className="text-muted-foreground">
+                  Sign up for free and create a debate room on any topic, or
+                  accept an invitation from a friend.
+                </p>
+              </div>
+            </div>
 
-      {/* CTA Section - Create Debate Form */}
-      <section
-        id="create-debate"
-        className="py-24 bg-slate-900 dark:bg-slate-950"
-      >
-        <motion.div
-          initial={{ opacity: 0, y: 50 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: "-100px" }}
-          transition={{ duration: 0.8 }}
-          className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8"
-        >
-          <motion.div
-            initial={{ opacity: 0 }}
-            whileInView={{ opacity: 1 }}
-            viewport={{ once: true }}
-            transition={{ delay: 0.2 }}
-            className="text-center mb-12"
-          >
-            <h2 className="text-4xl md:text-5xl font-bold text-white mb-4">
-              Ready to Start Debating?
-            </h2>
-            <p className="text-xl text-slate-300">
-              Create your first debate room and invite an opponent
-            </p>
-          </motion.div>
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            whileInView={{ opacity: 1, scale: 1 }}
-            viewport={{ once: true }}
-            transition={{ delay: 0.3, duration: 0.5 }}
-            className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl p-8 md:p-12"
-          >
-            <TopicForm onSubmit={handleCreateDebate} isLoading={isCreating} />
-          </motion.div>
-        </motion.div>
-      </section>
+            {/* Step 2 */}
+            <div className="relative">
+              <div className="text-center">
+                <div className="w-16 h-16 bg-gradient-to-br from-purple-500 to-accent rounded-full flex items-center justify-center mx-auto mb-4 text-2xl font-bold text-white shadow-lg">
+                  2
+                </div>
+                <h3 className="text-xl font-semibold text-foreground mb-2">
+                  Debate in Real-Time
+                </h3>
+                <p className="text-muted-foreground">
+                  Take turns presenting your arguments. Watch the conversation
+                  unfold in real-time with instant messaging.
+                </p>
+              </div>
+            </div>
 
-      {/* Footer */}
-      <motion.footer
-        initial={{ opacity: 0 }}
-        whileInView={{ opacity: 1 }}
-        viewport={{ once: true }}
-        className="bg-slate-900 text-slate-400 py-12"
-      >
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center">
-            <motion.div
-              whileHover={{ scale: 1.1 }}
-              className="flex items-center justify-center gap-2 mb-4"
-            >
-              <Brain className="w-6 h-6 text-amber-400" />
-              <span className="text-xl font-bold text-white">Debate Platform</span>
-            </motion.div>
-            <p className="text-sm mb-6">
-              Powered by AI Judges • Built with Next.js and TypeScript
-            </p>
-            <div className="flex justify-center gap-6 text-sm">
-              {["Privacy", "Terms", "Contact"].map((link, index) => (
-                <motion.a
-                  key={index}
-                  href="#"
-                  whileHover={{ scale: 1.1, color: "#fff" }}
-                  className="hover:text-white transition-colors"
-                >
-                  {link}
-                </motion.a>
-              ))}
+            {/* Step 3 */}
+            <div className="text-center">
+              <div className="w-16 h-16 bg-gradient-to-br from-accent to-primary rounded-full flex items-center justify-center mx-auto mb-4 text-2xl font-bold text-white shadow-lg">
+                3
+              </div>
+              <h3 className="text-xl font-semibold text-foreground mb-2">
+                Get Feedback
+              </h3>
+              <p className="text-muted-foreground">
+                Receive AI-powered analysis of your arguments. Learn what
+                worked, what didn't, and how to improve.
+              </p>
             </div>
           </div>
         </div>
-      </motion.footer>
+      </section>
+
+      {/* Social Proof Section */}
+      <section className="py-20 bg-muted/30">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-16">
+            <h2 className="text-3xl sm:text-4xl font-bold text-foreground mb-4">
+              Loved by Debaters Worldwide
+            </h2>
+            <p className="text-lg text-muted-foreground">
+              Join thousands of users sharpening their argumentation skills
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto">
+            {/* Testimonial 1 */}
+            <div className="p-6 bg-card rounded-xl border border-border">
+              <div className="flex items-center gap-1 mb-4">
+                {[...Array(5)].map((_, i) => (
+                  <Star
+                    key={i}
+                    className="w-4 h-4 fill-yellow-400 text-yellow-400"
+                  />
+                ))}
+              </div>
+              <p className="text-muted-foreground mb-4">
+                "This platform has transformed how I think about arguments. The
+                AI judge gives incredibly insightful feedback."
+              </p>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
+                  <span className="text-primary font-semibold">SM</span>
+                </div>
+                <div>
+                  <div className="font-semibold text-foreground">Sarah M.</div>
+                  <div className="text-sm text-muted-foreground">
+                    Law Student
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Testimonial 2 */}
+            <div className="p-6 bg-card rounded-xl border border-border">
+              <div className="flex items-center gap-1 mb-4">
+                {[...Array(5)].map((_, i) => (
+                  <Star
+                    key={i}
+                    className="w-4 h-4 fill-yellow-400 text-yellow-400"
+                  />
+                ))}
+              </div>
+              <p className="text-muted-foreground mb-4">
+                "Debating with friends has never been easier. The real-time
+                features make it feel like we're in the same room."
+              </p>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
+                  <span className="text-primary font-semibold">JD</span>
+                </div>
+                <div>
+                  <div className="font-semibold text-foreground">James D.</div>
+                  <div className="text-sm text-muted-foreground">
+                    Philosophy Major
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Testimonial 3 */}
+            <div className="p-6 bg-card rounded-xl border border-border">
+              <div className="flex items-center gap-1 mb-4">
+                {[...Array(5)].map((_, i) => (
+                  <Star
+                    key={i}
+                    className="w-4 h-4 fill-yellow-400 text-yellow-400"
+                  />
+                ))}
+              </div>
+              <p className="text-muted-foreground mb-4">
+                "The best tool for improving critical thinking. I use it weekly
+                to practice and refine my argumentation skills."
+              </p>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
+                  <span className="text-primary font-semibold">RK</span>
+                </div>
+                <div>
+                  <div className="font-semibold text-foreground">Rachel K.</div>
+                  <div className="text-sm text-muted-foreground">
+                    Debate Coach
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Stats Section */}
+      <section className="py-16 border-y border-border">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
+            <div>
+              <div className="text-3xl sm:text-4xl font-bold text-foreground mb-2">
+                10K+
+              </div>
+              <div className="text-muted-foreground">Active Users</div>
+            </div>
+            <div>
+              <div className="text-3xl sm:text-4xl font-bold text-foreground mb-2">
+                50K+
+              </div>
+              <div className="text-muted-foreground">Debates Completed</div>
+            </div>
+            <div>
+              <div className="text-3xl sm:text-4xl font-bold text-foreground mb-2">
+                98%
+              </div>
+              <div className="text-muted-foreground">Satisfaction Rate</div>
+            </div>
+            <div>
+              <div className="text-3xl sm:text-4xl font-bold text-foreground mb-2">
+                24/7
+              </div>
+              <div className="text-muted-foreground">Available</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Final CTA Section */}
+      <section className="py-20">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <div className="p-12 bg-gradient-to-br from-primary/10 via-purple-500/10 to-accent/10 rounded-2xl border border-primary/20">
+            <Brain className="w-16 h-16 text-primary mx-auto mb-6" />
+            <h2 className="text-3xl sm:text-4xl font-bold text-foreground mb-4">
+              Ready to Start Debating?
+            </h2>
+            <p className="text-lg text-muted-foreground mb-8 max-w-2xl mx-auto">
+              Join thousands of users who are already improving their
+              argumentation skills. Get started in seconds, no credit card
+              required.
+            </p>
+            {isAuthenticated ? (
+              <Link
+                href="/dashboard"
+                className="inline-flex items-center gap-2 px-8 py-4 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-lg shadow-lg shadow-primary/25 transition-all duration-200 hover:shadow-xl hover:shadow-primary/30 hover:scale-105"
+              >
+                Go to Dashboard
+                <ArrowRight className="w-5 h-5" />
+              </Link>
+            ) : (
+              <Link
+                href="/auth/signup"
+                className="inline-flex items-center gap-2 px-8 py-4 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-lg shadow-lg shadow-primary/25 transition-all duration-200 hover:shadow-xl hover:shadow-primary/30 hover:scale-105"
+              >
+                Get Started Free
+                <ArrowRight className="w-5 h-5" />
+              </Link>
+            )}
+          </div>
+        </div>
+      </section>
+
+      {/* Footer */}
+      <footer className="py-12 border-t border-border bg-muted/30">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
+            <div>
+              <div className="flex items-center gap-2 mb-4">
+                <Brain className="w-6 h-6 text-primary" />
+                <span className="text-lg font-bold text-foreground">
+                  Debate Platform
+                </span>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Sharpen your mind through intelligent debate. Think critically,
+                argue persuasively.
+              </p>
+            </div>
+            <div>
+              <h4 className="font-semibold text-foreground mb-4">Product</h4>
+              <ul className="space-y-2 text-sm text-muted-foreground">
+                <li>
+                  <Link
+                    href="/dashboard"
+                    className="hover:text-foreground transition-colors"
+                  >
+                    Features
+                  </Link>
+                </li>
+                <li>
+                  <Link
+                    href="/dashboard"
+                    className="hover:text-foreground transition-colors"
+                  >
+                    Pricing
+                  </Link>
+                </li>
+                <li>
+                  <Link
+                    href="/dashboard"
+                    className="hover:text-foreground transition-colors"
+                  >
+                    Updates
+                  </Link>
+                </li>
+              </ul>
+            </div>
+            <div>
+              <h4 className="font-semibold text-foreground mb-4">Company</h4>
+              <ul className="space-y-2 text-sm text-muted-foreground">
+                <li>
+                  <Link
+                    href="/auth/signup"
+                    className="hover:text-foreground transition-colors"
+                  >
+                    About
+                  </Link>
+                </li>
+                <li>
+                  <Link
+                    href="/auth/signup"
+                    className="hover:text-foreground transition-colors"
+                  >
+                    Blog
+                  </Link>
+                </li>
+                <li>
+                  <Link
+                    href="/auth/signup"
+                    className="hover:text-foreground transition-colors"
+                  >
+                    Careers
+                  </Link>
+                </li>
+              </ul>
+            </div>
+            <div>
+              <h4 className="font-semibold text-foreground mb-4">Resources</h4>
+              <ul className="space-y-2 text-sm text-muted-foreground">
+                <li>
+                  <Link
+                    href="/auth/signin"
+                    className="hover:text-foreground transition-colors"
+                  >
+                    Documentation
+                  </Link>
+                </li>
+                <li>
+                  <Link
+                    href="/auth/signin"
+                    className="hover:text-foreground transition-colors"
+                  >
+                    Support
+                  </Link>
+                </li>
+                <li>
+                  <Link
+                    href="/auth/signin"
+                    className="hover:text-foreground transition-colors"
+                  >
+                    Community
+                  </Link>
+                </li>
+              </ul>
+            </div>
+          </div>
+          <div className="pt-8 border-t border-border text-center text-sm text-muted-foreground">
+            <p>© 2024 Debate Platform. All rights reserved.</p>
+          </div>
+        </div>
+      </footer>
     </div>
-  );
-}
-
-// Animated Counter Component
-function AnimatedCounter({ target, suffix }: { target: number; suffix: string }) {
-  const [count, setCount] = useState(0);
-  const ref = useRef<HTMLSpanElement>(null);
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          const duration = 2000;
-          const steps = 60;
-          const increment = target / steps;
-          const stepDuration = duration / steps;
-
-          let current = 0;
-          const timer = setInterval(() => {
-            current += increment;
-            if (current >= target) {
-              setCount(target);
-              clearInterval(timer);
-            } else {
-              setCount(Math.floor(current));
-            }
-          }, stepDuration);
-
-          return () => clearInterval(timer);
-        }
-      },
-      { threshold: 0.5 }
-    );
-
-    if (ref.current) {
-      observer.observe(ref.current);
-    }
-
-    return () => {
-      if (ref.current) {
-        observer.unobserve(ref.current);
-      }
-    };
-  }, [target]);
-
-  return (
-    <span ref={ref}>
-      {count.toLocaleString()}
-      {suffix}
-    </span>
   );
 }

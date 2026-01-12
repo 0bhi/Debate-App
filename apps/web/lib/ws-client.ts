@@ -59,7 +59,6 @@ export class DebateWebSocketClient {
         this.isManualDisconnect = false; // Reset flag on new connection attempt
 
         this.ws.onopen = () => {
-          console.log("WebSocket connected");
           this.reconnectAttempts = 0;
           this.reconnectDelay = 1000;
           this.isManualDisconnect = false;
@@ -89,9 +88,8 @@ export class DebateWebSocketClient {
         };
 
         this.ws.onclose = (event) => {
-          console.log("WebSocket disconnected:", event.code, event.reason);
           this.ws = null; // Clear reference
-          
+
           // Only attempt reconnection if it wasn't a manual disconnect
           if (!this.isManualDisconnect) {
             this.handleDisconnect();
@@ -150,21 +148,17 @@ export class DebateWebSocketClient {
     }
 
     this.reconnectAttempts++;
-    console.log(
-      `Attempting to reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts})...`
-    );
 
     this.reconnectTimer = setTimeout(() => {
       // Rebuild URL with userId for reconnection
       const resolvedBaseUrl =
-        (process.env.NEXT_PUBLIC_WS_URL as string) ||
-        "ws://localhost:3001";
+        (process.env.NEXT_PUBLIC_WS_URL as string) || "ws://localhost:3001";
       const params = new URLSearchParams({ sessionId: this.sessionId });
       if (this.userId) {
         params.append("userId", this.userId);
       }
       this.url = `${resolvedBaseUrl}?${params.toString()}`;
-      
+
       this.connect().catch((error) => {
         console.error("Reconnection failed:", error);
       });
@@ -224,7 +218,7 @@ export class DebateWebSocketClient {
 
   disconnect(): void {
     this.isManualDisconnect = true; // Set flag before disconnecting
-    
+
     // Clear reconnect timer
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);

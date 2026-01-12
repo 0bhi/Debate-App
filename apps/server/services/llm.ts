@@ -1,6 +1,5 @@
 import OpenAI from "openai";
 import { env } from "../env";
-import { Persona } from "@repo/types";
 import { logger } from "../utils/logger";
 import { rateLimiter } from "./rateLimiter";
 
@@ -18,16 +17,8 @@ const MAX_RETRIES = 5;
  */
 const BASE_RETRY_DELAY_MS = 1000;
 
-export interface LLMResponse {
-  text: string;
-  tokensIn: number;
-  tokensOut: number;
-  durationMs: number;
-}
-
-export interface StreamingLLMResponse extends LLMResponse {
-  stream: AsyncIterable<string>;
-}
+// LLMResponse interface removed - no longer needed since we removed persona-based debate generation
+// Only judgeDebate() is used, which returns its own specific return type
 
 export class LLMService {
   /**
@@ -56,9 +47,6 @@ export class LLMService {
         remaining: rateLimitResult.remaining,
         resetAt: new Date(rateLimitResult.resetAt * 1000).toISOString(),
       });
-      console.warn(
-        `[RATE LIMIT] Waiting ${rateLimitResult.retryAfter}s before making request...`
-      );
 
       // Wait for rate limit window (with timeout to prevent infinite waiting)
       try {
@@ -104,14 +92,10 @@ export class LLMService {
       }
 
       logger.info("Making API call", { retryCount, requestRecorded });
-      console.log(`[LLM] Making API call (retry: ${retryCount})...`);
 
       const result = await apiCall();
 
       logger.info("API call completed successfully", { retryCount });
-      console.log(
-        `[LLM] API call completed successfully (retry: ${retryCount})`
-      );
 
       return result;
     } catch (error: any) {
@@ -178,127 +162,6 @@ export class LLMService {
     }
   }
 
-  async generateDebateResponse(
-    prompt: string,
-    persona: Persona,
-    maxTokens: number = 200
-  ): Promise<LLMResponse> {
-    const startTime = Date.now();
-
-    try {
-      const systemPrompt = this.buildPersonaSystemPrompt(persona);
-
-      const response = await this.executeWithRateLimit(() =>
-        openai.chat.completions.create({
-          model: "gemini-2.5-flash",
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: prompt },
-          ],
-          max_tokens: maxTokens,
-          temperature: 0.8,
-        })
-      );
-
-      const text = response.choices[0]?.message?.content || "";
-      const tokensIn = response.usage?.prompt_tokens || 0;
-      const tokensOut = response.usage?.completion_tokens || 0;
-      const durationMs = Date.now() - startTime;
-
-      logger.info("LLM response generated", {
-        persona: persona.name,
-        tokensIn,
-        tokensOut,
-        durationMs,
-        textLength: text.length,
-      });
-
-      return {
-        text,
-        tokensIn,
-        tokensOut,
-        durationMs,
-      };
-    } catch (error) {
-      logger.error("LLM generation failed", { error, persona: persona.name });
-      throw error;
-    }
-  }
-
-  async *streamDebateResponse(
-    prompt: string,
-    persona: Persona,
-    maxTokens: number = 200
-  ): AsyncGenerator<string, LLMResponse, unknown> {
-    const startTime = Date.now();
-    let fullText = "";
-    let tokensIn = 0;
-    let tokensOut = 0;
-
-    try {
-      const systemPrompt = this.buildPersonaSystemPrompt(persona);
-
-      const stream = await this.executeWithRateLimit(() =>
-        openai.chat.completions.create({
-          model: "gemini-2.5-flash",
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: prompt },
-          ],
-          max_tokens: maxTokens,
-          temperature: 0.8,
-          stream: true,
-        })
-      );
-
-      for await (const chunk of stream) {
-        const content = chunk.choices[0]?.delta?.content || "";
-        if (content) {
-          fullText += content;
-          yield content;
-        }
-
-        // Get usage data from the last chunk
-        if (chunk.usage) {
-          tokensIn = chunk.usage.prompt_tokens || 0;
-          tokensOut = chunk.usage.completion_tokens || 0;
-        }
-      }
-
-      const durationMs = Date.now() - startTime;
-
-      if (tokensIn === 0) {
-        // Rough estimation: ~4 characters per token
-        tokensIn = Math.ceil((systemPrompt.length + prompt.length) / 4);
-      }
-      if (tokensOut === 0) {
-        tokensOut = Math.ceil(fullText.length / 4);
-      }
-
-      logger.info("LLM streaming response completed", {
-        persona: persona.name,
-        tokensIn,
-        tokensOut,
-        durationMs,
-        textLength: fullText.length,
-      });
-
-      return {
-        text: fullText,
-        tokensIn,
-        tokensOut,
-        durationMs,
-      };
-    } catch (error) {
-      logger.error("LLM streaming failed", {
-        error: error instanceof Error ? error.message : error,
-        status: (error as any)?.status,
-        persona: persona.name,
-      });
-      throw error;
-    }
-  }
-
   async judgeDebate(
     topic: string,
     transcript: string
@@ -341,72 +204,6 @@ export class LLMService {
           timeoutPromise,
         ]);
       } catch (apiError: any) {
-        // Log the actual LLM API response/error - OpenAI SDK error structure
-        console.log("=== LLM API ERROR ===");
-        console.log(
-          "Error type:",
-          apiError?.constructor?.name || typeof apiError
-        );
-        console.log(
-          "Status:",
-          apiError?.status ||
-            apiError?.statusCode ||
-            apiError?.code ||
-            "unknown"
-        );
-        console.log("Message:", apiError?.message || String(apiError));
-        console.log("Code:", apiError?.code || "no code");
-        console.log("Type:", apiError?.type || "no type");
-
-        // Try to extract error details from OpenAI SDK error structure
-        if (apiError?.error) {
-          console.log("Error object:", JSON.stringify(apiError.error, null, 2));
-          console.log("Error code:", apiError.error?.code);
-          console.log("Error param:", apiError.error?.param);
-          console.log("Error message:", apiError.error?.message);
-        }
-
-        // Try to get response body if it exists
-        if (apiError?.response) {
-          console.log("Response object exists");
-          if (apiError.response?.data) {
-            console.log(
-              "Response data:",
-              JSON.stringify(apiError.response.data, null, 2)
-            );
-          }
-          if (apiError.response?.headers) {
-            console.log(
-              "Response headers:",
-              JSON.stringify(apiError.response.headers, null, 2)
-            );
-          }
-        }
-
-        // Try to get headers directly
-        if (apiError?.headers) {
-          console.log("Headers:", JSON.stringify(apiError.headers, null, 2));
-        }
-
-        // Try to read the response body from the error (if it's already parsed)
-        if (
-          apiError?.response?.body &&
-          typeof apiError.response.body === "object"
-        ) {
-          console.log(
-            "Response body object:",
-            JSON.stringify(apiError.response.body, null, 2)
-          );
-        }
-
-        // Log all enumerable properties
-        console.log("All properties:", Object.keys(apiError));
-        console.log(
-          "Full error:",
-          JSON.stringify(apiError, Object.getOwnPropertyNames(apiError), 2)
-        );
-        console.log("====================");
-
         // Note: 429 errors should be handled by executeWithRateLimit with exponential backoff
         // If we reach here, it means max retries were exceeded or it's a different error
         const status =
@@ -439,17 +236,6 @@ export class LLMService {
             errorMessage = `${errorMessage})`;
           }
 
-          const body =
-            apiError?.error ||
-            apiError?.response?.data ||
-            apiError?.response?.body ||
-            apiError?.body ||
-            errorMessage;
-          console.log(`LLM API returned status ${status}`);
-          console.log(
-            "Error body/details:",
-            typeof body === "string" ? body : JSON.stringify(body, null, 2)
-          );
           throw new Error(`LLM API Error (${status}): ${errorMessage}`);
         }
 
@@ -473,28 +259,7 @@ export class LLMService {
           textLength: text.length,
           tokensOut: response.usage?.completion_tokens || 0,
         });
-        console.warn("=== WARNING: Response was truncated ===");
-        console.warn("Finish reason:", finishReason);
-        console.warn("Text length:", text.length);
-        console.warn("Tokens out:", response.usage?.completion_tokens || 0);
-        console.warn("=====================================");
       }
-
-      logger.info("=== LLM API SUCCESS ===", {
-        responseText: text.substring(0, 500), // Log first 500 chars
-        fullTextLength: text.length,
-        tokensIn: response.usage?.prompt_tokens || 0,
-        tokensOut: response.usage?.completion_tokens || 0,
-        model: response.model,
-        finishReason,
-      });
-      console.log("=== LLM API SUCCESS ===");
-      console.log("Response text (first 500 chars):", text.substring(0, 500));
-      console.log("Full text length:", text.length);
-      console.log("Tokens in:", response.usage?.prompt_tokens || 0);
-      console.log("Tokens out:", response.usage?.completion_tokens || 0);
-      console.log("Finish reason:", finishReason);
-      console.log("======================");
 
       const tokensIn = response.usage?.prompt_tokens || 0;
       const tokensOut = response.usage?.completion_tokens || 0;
@@ -537,31 +302,16 @@ export class LLMService {
 
         // Validate required fields
         if (!judgeJSON.A || !judgeJSON.B || !judgeJSON.winner) {
-          console.log(
-            "Invalid judge JSON structure - missing required fields:",
-            judgeJSON
-          );
           throw new Error(
             "Invalid judge JSON structure: missing required fields (A, B, or winner)"
           );
         }
         if (!["A", "B", "TIE"].includes(judgeJSON.winner)) {
-          console.log("Invalid winner value:", judgeJSON.winner);
           throw new Error(
             `Invalid winner value: ${judgeJSON.winner}. Must be A, B, or TIE.`
           );
         }
-
-        console.log("Parsed judge JSON:", JSON.stringify(judgeJSON, null, 2));
       } catch (parseError) {
-        console.log("=== JSON PARSE ERROR ===");
-        console.log("Original text:", text);
-        console.log("Text length:", text.length);
-        console.log(
-          "Parse error:",
-          parseError instanceof Error ? parseError.message : String(parseError)
-        );
-        console.log("========================");
         throw new Error(
           `Failed to parse judge response: ${parseError instanceof Error ? parseError.message : String(parseError)}. Response was: ${text.substring(0, 200)}`
         );
@@ -591,32 +341,8 @@ export class LLMService {
         stack: error instanceof Error ? error.stack : undefined,
       });
 
-      console.error("=== JUDGE GENERATION FAILED ===");
-      console.error("Error message:", errorMessage);
-      console.error("Status code:", errorStatus);
-      if (error instanceof Error && error.stack) {
-        console.error("Stack trace:", error.stack);
-      }
-      console.error("==============================");
-
       throw error;
     }
-  }
-
-  private buildPersonaSystemPrompt(persona: Persona): string {
-    return `You are ${persona.name}.
-Bio: ${persona.bio}
-Speaking style: ${persona.style}
-
-Rules:
-- Max 200 words.
-- Be punchy and specific.
-- Do not repeat yourself.
-- Cite concrete examples or data (even if approximate, but mark as "estimate").
-- No filler.
-- You must only speak as ${persona.name}.
-- Stay true to your character's voice and perspective.
-- Make compelling arguments that reflect your unique background and expertise.`;
   }
 
   private buildJudgeSystemPrompt(): string {

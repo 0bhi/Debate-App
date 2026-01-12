@@ -35,21 +35,6 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     data: z.any(), // SessionState type
   }),
   z.object({
-    type: z.literal("TURN_START"),
-    speaker: z.enum(["A", "B"]),
-    orderIndex: z.number(),
-  }),
-  z.object({
-    type: z.literal("TURN_TOKEN"),
-    chunk: z.string(),
-  }),
-  z.object({
-    type: z.literal("TURN_END"),
-    text: z.string(),
-    orderIndex: z.number().optional(),
-    speaker: z.enum(["A", "B"]).optional(),
-  }),
-  z.object({
     type: z.literal("YOUR_TURN"),
     speaker: z.enum(["A", "B"]),
     orderIndex: z.number(),

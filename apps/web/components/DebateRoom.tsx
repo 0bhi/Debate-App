@@ -30,6 +30,7 @@ export function DebateRoom({ sessionId }: DebateRoomProps) {
     disconnectWebSocket,
     submitArgument,
     clearError,
+    setCurrentTurn,
   } = useDebateStore();
 
   const [invitationAccepted, setInvitationAccepted] = useState(false);
@@ -47,7 +48,9 @@ export function DebateRoom({ sessionId }: DebateRoomProps) {
     // If there's an invite token but user is not authenticated, redirect to sign in
     if (inviteToken && sessionStatus === "unauthenticated") {
       const callbackUrl = `/debate/${sessionId}?invite=${inviteToken}`;
-      router.push(`/auth/signin?callbackUrl=${encodeURIComponent(callbackUrl)}`);
+      router.push(
+        `/auth/signin?callbackUrl=${encodeURIComponent(callbackUrl)}`
+      );
       return;
     }
   }, [sessionStatus, inviteToken, sessionId, router]);
@@ -108,6 +111,23 @@ export function DebateRoom({ sessionId }: DebateRoomProps) {
 
   // Define variables that depend on sessionState (but hooks must come before early returns)
   const userId = (session?.user as any)?.id;
+
+  // Fix: Set currentTurn when debate starts and user should go first
+  // This handles the case where the user misses the YOUR_TURN message
+  useEffect(() => {
+    if (
+      sessionState &&
+      userId &&
+      sessionState.status === "RUNNING" &&
+      sessionState.turns.length === 0 &&
+      !currentTurn.speaker
+    ) {
+      // Debate just started, first turn is always debater A
+      if (userId === sessionState.debaterAId) {
+        setCurrentTurn("A");
+      }
+    }
+  }, [sessionState, userId, currentTurn.speaker, setCurrentTurn]);
 
   // Handle invitation acceptance separately after debate state is loaded and WebSocket is connected
   // This hook must be called before any early returns to follow Rules of Hooks
@@ -208,145 +228,192 @@ export function DebateRoom({ sessionId }: DebateRoomProps) {
     );
   }
 
+  // Calculate if it's the user's turn
+  // Handle edge case: debate just started (RUNNING, no turns yet) and user is debater A
   const isMyTurn =
     sessionState.status === "RUNNING" &&
-    currentTurn.speaker &&
-    ((currentTurn.speaker === "A" && userId === sessionState.debaterAId) ||
-      (currentTurn.speaker === "B" && userId === sessionState.debaterBId));
+    ((currentTurn.speaker &&
+      ((currentTurn.speaker === "A" && userId === sessionState.debaterAId) ||
+        (currentTurn.speaker === "B" && userId === sessionState.debaterBId))) ||
+      // Edge case: debate just started, no turns yet, user is debater A (first turn)
+      (!currentTurn.speaker &&
+        sessionState.turns.length === 0 &&
+        userId === sessionState.debaterAId));
+
+  // Check if debate is over
+  const isDebateOver =
+    sessionState.status === "FINISHED" || sessionState.winner !== undefined;
+
+  // Dynamic grid layout: during debate main content is larger, after debate judge panel is larger
+  // During debate: Transcript 75%, Judge 25% | After debate: Judge 67%, Transcript 33%
+  const transcriptColSpan = isDebateOver ? "lg:col-span-4" : "lg:col-span-9";
+  const judgeColSpan = isDebateOver ? "lg:col-span-8" : "lg:col-span-3";
 
   return (
-    <div className="min-h-screen p-4 relative">
+    <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20 relative flex flex-col">
       <DebatesSidebar currentDebateId={sessionId} />
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="mb-6">
-          <div className="text-center mb-4">
-            <h1 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">
-              Debate Platform
-            </h1>
-            <div className="flex items-center justify-center gap-2 text-sm">
-              <div
-                className={`w-2 h-2 rounded-full ${isConnected ? "bg-green-500" : "bg-red-500"}`}
-              />
-              <span className="text-slate-600 dark:text-slate-400">
-                {isConnected ? "Connected" : "Disconnected"}
-              </span>
-            </div>
-          </div>
-
-          {/* Debaters */}
-          <div className="flex items-center justify-center gap-8 mb-6">
-            <div className="text-center">
-              <Avatar
-                name={sessionState.debaterAName || "Debater A"}
-                size="lg"
-                isActive={currentTurn.speaker === "A"}
-                isSpeaking={false}
-              />
-              {userId === sessionState.debaterAId && (
-                <div className="mt-2 text-xs text-blue-600 dark:text-blue-400">
-                  (You)
-                </div>
-              )}
-            </div>
-
-            <div className="flex flex-col items-center">
-              <div className="text-4xl mb-2">⚡</div>
-              <div className="text-sm font-medium text-slate-600 dark:text-slate-400">
-                VS
+      <div className="flex-1 flex flex-col max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-0 w-full">
+        {/* Compact Debaters Section */}
+        <div className="mb-4">
+          <div className="bg-card/80 backdrop-blur-sm border border-border rounded-xl shadow-sm p-3 lg:p-4">
+            {/* Topic Header - Compact */}
+            <div className="text-center mb-3">
+              <div className="inline-flex items-center gap-2 px-3 py-1 bg-primary/10 rounded-full mb-2">
+                <div
+                  className={`w-1.5 h-1.5 rounded-full animate-pulse ${
+                    isConnected ? "bg-green-500" : "bg-red-500"
+                  }`}
+                />
+                <span className="text-xs font-medium text-foreground">
+                  {isConnected ? "Live" : "Offline"}
+                </span>
               </div>
+              <h2 className="text-sm lg:text-base font-semibold text-muted-foreground">
+                {sessionState.topic}
+              </h2>
             </div>
 
-            <div className="text-center">
-              {sessionState.debaterBId ? (
-                <>
+            {/* Compact Debaters Display */}
+            <div className="flex items-center justify-center gap-4 lg:gap-8">
+              {/* Debater A */}
+              <div className="flex items-center gap-3">
+                <div className="relative">
                   <Avatar
-                    name={sessionState.debaterBName || "Debater B"}
-                    size="lg"
-                    isActive={currentTurn.speaker === "B"}
+                    name={sessionState.debaterAName || "Debater A"}
+                    size="sm"
+                    isActive={currentTurn.speaker === "A"}
                     isSpeaking={false}
+                    showName={false}
                   />
-                  {userId === sessionState.debaterBId && (
-                    <div className="mt-2 text-xs text-blue-600 dark:text-blue-400">
-                      (You)
-                    </div>
+                  {currentTurn.speaker === "A" && (
+                    <div className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-card animate-pulse" />
                   )}
-                </>
-              ) : (
-                <div className="flex flex-col items-center gap-2">
-                  <div className="w-16 h-16 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center">
-                    <span className="text-2xl">?</span>
-                  </div>
-                  <div className="text-sm text-slate-500 dark:text-slate-400">
-                    Waiting for opponent...
+                </div>
+                <div>
+                  <div className="font-medium text-foreground text-sm">
+                    {sessionState.debaterAName || "Debater A"}
                   </div>
                   {userId === sessionState.debaterAId && (
-                    <div className="mt-2">
-                      <InviteButton debateId={sessionId} />
+                    <div className="inline-flex items-center px-1.5 py-0.5 bg-primary/10 text-primary rounded-full text-xs font-medium">
+                      You
                     </div>
                   )}
                 </div>
-              )}
+              </div>
+
+              {/* VS Divider - Compact */}
+              <div className="px-2 py-1 bg-gradient-to-r from-primary/10 to-accent/10 border border-border rounded-full">
+                <span className="text-xs font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+                  VS
+                </span>
+              </div>
+
+              {/* Debater B */}
+              <div className="flex items-center gap-3">
+                {sessionState.debaterBId ? (
+                  <>
+                    <div className="relative">
+                      <Avatar
+                        name={sessionState.debaterBName || "Debater B"}
+                        size="sm"
+                        isActive={currentTurn.speaker === "B"}
+                        isSpeaking={false}
+                        showName={false}
+                      />
+                      {currentTurn.speaker === "B" && (
+                        <div className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-card animate-pulse" />
+                      )}
+                    </div>
+                    <div>
+                      <div className="font-medium text-foreground text-sm">
+                        {sessionState.debaterBName || "Debater B"}
+                      </div>
+                      {userId === sessionState.debaterBId && (
+                        <div className="inline-flex items-center px-1.5 py-0.5 bg-primary/10 text-primary rounded-full text-xs font-medium">
+                          You
+                        </div>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-full bg-muted border-2 border-dashed border-border flex items-center justify-center">
+                      <span className="text-xl text-muted-foreground">?</span>
+                    </div>
+                    <div>
+                      <div className="text-sm font-medium text-muted-foreground">
+                        Waiting for opponent
+                      </div>
+                      {userId === sessionState.debaterAId && (
+                        <div className="mt-1">
+                          <InviteButton debateId={sessionId} />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
 
-          {/* Debate Ready Status */}
-          {sessionState.debaterAId &&
-            sessionState.debaterBId &&
-            sessionState.status === "CREATED" && (
-              <div className="mb-4 p-4 bg-green-50 dark:bg-green-900/20 rounded-lg text-center border border-green-200 dark:border-green-800">
-                <p className="text-green-800 dark:text-green-200 font-medium">
-                  🎉 Debate Ready! Both debaters have joined. The debate will
-                  start soon.
-                </p>
-              </div>
-            )}
-        </div>
-
-        {/* Main Content */}
-        <div className="grid lg:grid-cols-3 gap-6">
-          {/* Transcript - Takes up 2/3 on large screens */}
-          <div className="lg:col-span-2">
-            <Transcript sessionState={sessionState} currentTurn={currentTurn} />
-
-            {/* Argument Input Form - Show when it's user's turn */}
-            {isMyTurn && (
-              <div className="mt-4">
-                <ArgumentInput
-                  onSubmit={(argument) => submitArgument(sessionId, argument)}
-                  isSubmitting={false}
-                />
-              </div>
-            )}
-
-            {/* Waiting for opponent */}
-            {sessionState.status === "RUNNING" &&
-              currentTurn.speaker &&
-              !isMyTurn && (
-                <div className="mt-4 p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg text-center">
-                  <p className="text-yellow-800 dark:text-yellow-200">
-                    Waiting for{" "}
-                    {currentTurn.speaker === "A"
-                      ? sessionState.debaterAName
-                      : sessionState.debaterBName}{" "}
-                    to respond...
+            {/* Debate Ready Status - Compact */}
+            {sessionState.debaterAId &&
+              sessionState.debaterBId &&
+              sessionState.status === "CREATED" && (
+                <div className="mt-3 p-2 bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 rounded-lg text-center border border-green-200 dark:border-green-800">
+                  <p className="text-green-800 dark:text-green-200 text-sm font-medium">
+                    🎉 Debate Ready! Both debaters have joined. The debate will
+                    start soon.
                   </p>
                 </div>
               )}
           </div>
+        </div>
 
-          {/* Judge Panel - Takes up 1/3 on large screens */}
-          <div className="lg:col-span-1">
-            <JudgePanel sessionState={sessionState} />
+        {/* Main Content Area - Dynamic grid layout */}
+        <div className="flex-1 flex flex-col min-h-0">
+          <div className="grid lg:grid-cols-12 gap-4 flex-1 min-h-0">
+            {/* Transcript Section - Larger during debate, smaller after */}
+            <div
+              className={`${transcriptColSpan} flex flex-col min-h-0 ${isMyTurn && !isDebateOver ? "pb-24" : ""}`}
+            >
+              <div className="flex-1 min-h-0 overflow-y-auto">
+                <Transcript
+                  sessionState={sessionState}
+                  currentTurn={currentTurn}
+                />
+              </div>
+
+              {/* Waiting for opponent - only show when not user's turn */}
+              {sessionState.status === "RUNNING" &&
+                currentTurn.speaker &&
+                !isMyTurn && (
+                  <div className="mt-4 bg-gradient-to-r from-amber-50 to-yellow-50 dark:from-amber-900/20 dark:to-yellow-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-3 text-center">
+                    <p className="text-amber-800 dark:text-amber-200 text-sm font-medium">
+                      ⏳ Waiting for{" "}
+                      {currentTurn.speaker === "A"
+                        ? sessionState.debaterAName
+                        : sessionState.debaterBName}{" "}
+                      to respond...
+                    </p>
+                  </div>
+                )}
+            </div>
+
+            {/* Judge Panel - Smaller during debate, larger after */}
+            <div className={judgeColSpan}>
+              <JudgePanel sessionState={sessionState} />
+            </div>
           </div>
         </div>
 
-        {/* Status Footer */}
-        <div className="mt-6 text-center">
-          <div className="text-sm text-slate-500 dark:text-slate-400">
-            Session ID: <span className="font-mono">{sessionId}</span>
+        {/* Sticky Input Area - Always visible during running debate */}
+        {sessionState.status === "RUNNING" && !isDebateOver && (
+          <div className="sticky bottom-0 left-0 right-0 z-50 bg-background backdrop-blur-sm -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 py-4">
+            <div className="max-w-7xl mx-auto">
+              <ArgumentInput sessionId={sessionId} disabled={!isMyTurn} />
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

@@ -30,17 +30,17 @@ export function AuthButton() {
               className="rounded-full"
             />
           ) : (
-            <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
+            <div className="w-8 h-8 bg-slate-500 rounded-full flex items-center justify-center">
               <User className="w-5 h-5 text-white" />
             </div>
           )}
-          <span className="text-sm font-medium text-slate-900 dark:text-white hidden sm:inline">
+          <span className="text-sm font-medium text-muted-foreground hidden sm:inline">
             {session.user.name || session.user.email}
           </span>
         </div>
         <button
           onClick={() => signOut({ callbackUrl: "/" })}
-          className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-900 dark:text-white rounded-lg transition-colors"
+          className="flex items-center gap-2 px-4 py-2 bg-muted hover:bg-accent text-muted-foreground hover:text-accent-foreground border border-border rounded-lg transition-colors"
         >
           <LogOut className="w-4 h-4" />
           <span className="hidden sm:inline">Sign Out</span>
@@ -53,7 +53,7 @@ export function AuthButton() {
     <div className="flex items-center gap-2">
       <button
         onClick={() => signIn()}
-        className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium"
+        className="flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg transition-colors font-medium"
       >
         <LogIn className="w-4 h-4" />
         <span className="hidden sm:inline">Sign In</span>

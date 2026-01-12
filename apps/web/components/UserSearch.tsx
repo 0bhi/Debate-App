@@ -56,17 +56,17 @@ export function UserSearch() {
     <div className="w-full">
       {/* Search Input */}
       <div className="relative mb-6">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-5 h-5" />
+        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-5 h-5" />
         <input
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search for users by name or email..."
-          className="w-full pl-10 pr-4 py-3 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full pl-10 pr-4 py-3 border border-input rounded-lg bg-background text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background transition-all"
         />
         {isLoading && (
           <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-500"></div>
+            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary"></div>
           </div>
         )}
       </div>
@@ -76,12 +76,12 @@ export function UserSearch() {
         <div>
           {isLoading ? (
             <div className="text-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-2"></div>
-              <p className="text-slate-600 dark:text-slate-400">Searching...</p>
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-2"></div>
+              <p className="text-muted-foreground">Searching...</p>
             </div>
           ) : results.length > 0 ? (
             <div className="space-y-3">
-              <h3 className="text-sm font-medium text-slate-600 dark:text-slate-400 mb-3">
+              <h3 className="text-sm font-medium text-muted-foreground mb-3">
                 Found {results.length} {results.length === 1 ? "user" : "users"}
               </h3>
               {results.map((user) => (
@@ -90,8 +90,8 @@ export function UserSearch() {
             </div>
           ) : (
             <div className="text-center py-8">
-              <Users className="w-12 h-12 text-slate-400 mx-auto mb-2" />
-              <p className="text-slate-600 dark:text-slate-400">
+              <Users className="w-12 h-12 text-muted-foreground/50 mx-auto mb-2" />
+              <p className="text-muted-foreground">
                 No users found. Try a different search query.
               </p>
             </div>
@@ -102,8 +102,8 @@ export function UserSearch() {
       {/* Initial State */}
       {!hasSearched && !isLoading && (
         <div className="text-center py-12">
-          <Search className="w-16 h-16 text-slate-300 dark:text-slate-600 mx-auto mb-4" />
-          <p className="text-slate-600 dark:text-slate-400">
+          <Search className="w-16 h-16 text-muted-foreground/30 mx-auto mb-4" />
+          <p className="text-muted-foreground">
             Enter at least 2 characters to search for users
           </p>
         </div>

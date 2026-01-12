@@ -21,10 +21,6 @@ export class DebateWebSocketServer {
   private clients = new Map<string, Set<AuthenticatedWebSocket>>();
 
   constructor(port: number = env.WS_PORT) {
-    console.log("🔍 Debug - env.WS_PORT:", env.WS_PORT);
-    console.log("🔍 Debug - port parameter:", port);
-    console.log("🔍 Debug - process.env.WS_PORT:", process.env.WS_PORT);
-
     try {
       this.wss = new WebSocketServer({
         port,

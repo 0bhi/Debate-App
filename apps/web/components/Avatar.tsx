@@ -8,6 +8,7 @@ interface AvatarProps {
   isSpeaking?: boolean;
   size?: "sm" | "md" | "lg";
   className?: string;
+  showName?: boolean;
 }
 
 export function Avatar({
@@ -16,6 +17,7 @@ export function Avatar({
   isSpeaking = false,
   size = "md",
   className = "",
+  showName = true,
 }: AvatarProps) {
   const sizeClasses = {
     sm: "w-12 h-12",
@@ -99,15 +101,17 @@ export function Avatar({
         </MotionDiv>
       </div>
 
-      <div className="text-center">
-        <div
-          className={`font-semibold text-slate-900 dark:text-white ${
-            size === "sm" ? "text-sm" : size === "md" ? "text-base" : "text-lg"
-          }`}
-        >
-          {name}
+      {showName && (
+        <div className="text-center">
+          <div
+            className={`font-semibold text-slate-900 dark:text-white ${
+              size === "sm" ? "text-sm" : size === "md" ? "text-base" : "text-lg"
+            }`}
+          >
+            {name}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Speaking indicator */}
       {isSpeaking && (

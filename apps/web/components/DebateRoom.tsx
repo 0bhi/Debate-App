@@ -112,22 +112,38 @@ export function DebateRoom({ sessionId }: DebateRoomProps) {
   // Define variables that depend on sessionState (but hooks must come before early returns)
   const userId = (session?.user as any)?.id;
 
-  // Fix: Set currentTurn when debate starts and user should go first
+  // Fix: Set currentTurn when debate starts and when turns change
   // This handles the case where the user misses the YOUR_TURN message
   useEffect(() => {
-    if (
-      sessionState &&
-      userId &&
-      sessionState.status === "RUNNING" &&
-      sessionState.turns.length === 0 &&
-      !currentTurn.speaker
-    ) {
-      // Debate just started, first turn is always debater A
-      if (userId === sessionState.debaterAId) {
+    if (!sessionState || !userId || sessionState.status !== "RUNNING") {
+      return;
+    }
+
+    // If debate just started (no turns yet), first turn is always debater A
+    if (sessionState.turns.length === 0) {
+      if (!currentTurn.speaker) {
         setCurrentTurn("A");
       }
+      return;
     }
-  }, [sessionState, userId, currentTurn.speaker, setCurrentTurn]);
+
+    // If we have turns, determine who should go next
+    const lastTurn = sessionState.turns[sessionState.turns.length - 1];
+    if (lastTurn) {
+      const nextSpeaker: "A" | "B" = lastTurn.speaker === "A" ? "B" : "A";
+
+      // Only update if currentTurn is not set or doesn't match expected next speaker
+      if (!currentTurn.speaker || currentTurn.speaker !== nextSpeaker) {
+        setCurrentTurn(nextSpeaker);
+      }
+    }
+  }, [
+    sessionState?.turns.length,
+    sessionState?.status,
+    userId,
+    currentTurn.speaker,
+    setCurrentTurn,
+  ]);
 
   // Handle invitation acceptance separately after debate state is loaded and WebSocket is connected
   // This hook must be called before any early returns to follow Rules of Hooks
@@ -229,16 +245,29 @@ export function DebateRoom({ sessionId }: DebateRoomProps) {
   }
 
   // Calculate if it's the user's turn
-  // Handle edge case: debate just started (RUNNING, no turns yet) and user is debater A
+  // Determine current speaker from turns if currentTurn is not set
+  const lastTurn =
+    sessionState.turns.length > 0
+      ? sessionState.turns[sessionState.turns.length - 1]
+      : null;
+
+  // If there's a currentTurn set, use it; otherwise infer from last turn
+  const effectiveCurrentSpeaker: "A" | "B" | null =
+    currentTurn.speaker ||
+    (lastTurn
+      ? lastTurn.speaker === "A"
+        ? "B"
+        : "A" // Next speaker alternates
+      : sessionState.status === "RUNNING" && sessionState.turns.length === 0
+        ? "A"
+        : null); // First turn is always A
+
+  // Calculate if it's the user's turn
   const isMyTurn =
     sessionState.status === "RUNNING" &&
-    ((currentTurn.speaker &&
-      ((currentTurn.speaker === "A" && userId === sessionState.debaterAId) ||
-        (currentTurn.speaker === "B" && userId === sessionState.debaterBId))) ||
-      // Edge case: debate just started, no turns yet, user is debater A (first turn)
-      (!currentTurn.speaker &&
-        sessionState.turns.length === 0 &&
-        userId === sessionState.debaterAId));
+    effectiveCurrentSpeaker !== null &&
+    ((effectiveCurrentSpeaker === "A" && userId === sessionState.debaterAId) ||
+      (effectiveCurrentSpeaker === "B" && userId === sessionState.debaterBId));
 
   // Check if debate is over
   const isDebateOver =
@@ -281,11 +310,11 @@ export function DebateRoom({ sessionId }: DebateRoomProps) {
                   <Avatar
                     name={sessionState.debaterAName || "Debater A"}
                     size="sm"
-                    isActive={currentTurn.speaker === "A"}
+                    isActive={effectiveCurrentSpeaker === "A"}
                     isSpeaking={false}
                     showName={false}
                   />
-                  {currentTurn.speaker === "A" && (
+                  {effectiveCurrentSpeaker === "A" && (
                     <div className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-card animate-pulse" />
                   )}
                 </div>
@@ -316,11 +345,11 @@ export function DebateRoom({ sessionId }: DebateRoomProps) {
                       <Avatar
                         name={sessionState.debaterBName || "Debater B"}
                         size="sm"
-                        isActive={currentTurn.speaker === "B"}
+                        isActive={effectiveCurrentSpeaker === "B"}
                         isSpeaking={false}
                         showName={false}
                       />
-                      {currentTurn.speaker === "B" && (
+                      {effectiveCurrentSpeaker === "B" && (
                         <div className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-card animate-pulse" />
                       )}
                     </div>
@@ -379,18 +408,18 @@ export function DebateRoom({ sessionId }: DebateRoomProps) {
               <div className="flex-1 min-h-0 overflow-y-auto">
                 <Transcript
                   sessionState={sessionState}
-                  currentTurn={currentTurn}
+                  currentTurn={{ speaker: effectiveCurrentSpeaker, text: "" }}
                 />
               </div>
 
               {/* Waiting for opponent - only show when not user's turn */}
               {sessionState.status === "RUNNING" &&
-                currentTurn.speaker &&
+                effectiveCurrentSpeaker &&
                 !isMyTurn && (
                   <div className="mt-4 bg-gradient-to-r from-amber-50 to-yellow-50 dark:from-amber-900/20 dark:to-yellow-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-3 text-center">
                     <p className="text-amber-800 dark:text-amber-200 text-sm font-medium">
                       ⏳ Waiting for{" "}
-                      {currentTurn.speaker === "A"
+                      {effectiveCurrentSpeaker === "A"
                         ? sessionState.debaterAName
                         : sessionState.debaterBName}{" "}
                       to respond...
@@ -410,7 +439,14 @@ export function DebateRoom({ sessionId }: DebateRoomProps) {
         {sessionState.status === "RUNNING" && !isDebateOver && (
           <div className="sticky bottom-0 left-0 right-0 z-50 bg-background backdrop-blur-sm -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 py-4">
             <div className="max-w-7xl mx-auto">
-              <ArgumentInput sessionId={sessionId} disabled={!isMyTurn} />
+              <ArgumentInput
+                sessionId={sessionId}
+                disabled={!isMyTurn}
+                isMyTurn={isMyTurn}
+                currentSpeaker={effectiveCurrentSpeaker}
+                debaterAName={sessionState.debaterAName || "Debater A"}
+                debaterBName={sessionState.debaterBName || "Debater B"}
+              />
             </div>
           </div>
         )}

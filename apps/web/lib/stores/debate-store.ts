@@ -195,6 +195,25 @@ export const useDebateStore = create<DebateStore>()(
               const prev = state.sessionState;
               if (!prev) {
                 // No previous state, always update
+                // Set currentTurn based on debate state
+                let newCurrentTurn = state.currentTurn;
+                if (incoming.status === "RUNNING") {
+                  if (incoming.turns.length === 0) {
+                    // Debate just started, first turn is always A
+                    newCurrentTurn = { speaker: "A", text: "" };
+                  } else {
+                    // Determine next speaker based on last turn
+                    const lastTurn = incoming.turns[incoming.turns.length - 1];
+                    if (lastTurn) {
+                      const nextSpeaker: "A" | "B" =
+                        lastTurn.speaker === "A" ? "B" : "A";
+                      newCurrentTurn = { speaker: nextSpeaker, text: "" };
+                    }
+                  }
+                } else if (incoming.status === "FINISHED") {
+                  newCurrentTurn = { speaker: null, text: "" };
+                }
+
                 return {
                   ...state,
                   sessionState: {
@@ -203,6 +222,7 @@ export const useDebateStore = create<DebateStore>()(
                       (a, b) => a.orderIndex - b.orderIndex
                     ),
                   },
+                  currentTurn: newCurrentTurn,
                 };
               }
 
@@ -226,6 +246,26 @@ export const useDebateStore = create<DebateStore>()(
                 debaterAChanged ||
                 debaterBChanged
               ) {
+                // Update currentTurn based on new turns
+                let newCurrentTurn = state.currentTurn;
+                if (incoming.status === "RUNNING") {
+                  if (incoming.turns.length === 0) {
+                    // Debate just started, first turn is always A
+                    newCurrentTurn = { speaker: "A", text: "" };
+                  } else {
+                    // Determine next speaker based on last turn
+                    const lastTurn = incoming.turns[incoming.turns.length - 1];
+                    if (lastTurn) {
+                      const nextSpeaker: "A" | "B" =
+                        lastTurn.speaker === "A" ? "B" : "A";
+                      newCurrentTurn = { speaker: nextSpeaker, text: "" };
+                    }
+                  }
+                } else if (incoming.status === "FINISHED") {
+                  // Debate is over, clear current turn
+                  newCurrentTurn = { speaker: null, text: "" };
+                }
+
                 return {
                   ...state,
                   sessionState: {
@@ -234,6 +274,7 @@ export const useDebateStore = create<DebateStore>()(
                       (a, b) => a.orderIndex - b.orderIndex
                     ),
                   },
+                  currentTurn: newCurrentTurn,
                 };
               }
 

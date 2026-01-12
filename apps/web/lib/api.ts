@@ -5,10 +5,20 @@ import { env } from "./env";
 // If a public server API URL is provided, call it directly from the client.
 const API_BASE = env.NEXT_PUBLIC_SERVER_API_URL || "/api";
 
+/**
+ * Maximum retries for 503 service unavailable errors
+ */
+const MAX_RETRIES_503 = 3;
+/**
+ * Base delay in milliseconds for exponential backoff on 503 errors
+ */
+const BASE_RETRY_DELAY_MS = 1000;
+
 class ApiClient {
   private async request<T>(
     endpoint: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
+    retryCount: number = 0
   ): Promise<T> {
     const url = `${API_BASE}${endpoint}`;
 
@@ -23,6 +33,35 @@ class ApiClient {
     const response = await fetch(url, config);
 
     if (!response.ok) {
+      // Handle 503 Service Unavailable with retry logic
+      if (response.status === 503 && retryCount < MAX_RETRIES_503) {
+        const retryAfter = response.headers.get("retry-after");
+        
+        // Calculate exponential backoff delay
+        // Use retry-after header if available, otherwise use exponential backoff
+        const retryAfterSeconds = retryAfter
+          ? parseInt(retryAfter, 10)
+          : null;
+
+        const backoffDelayMs = retryAfterSeconds
+          ? retryAfterSeconds * 1000
+          : BASE_RETRY_DELAY_MS * Math.pow(2, retryCount);
+
+        // Log retry attempt (only in development or if console is available)
+        if (typeof console !== "undefined" && console.warn) {
+          console.warn(`503 Service Unavailable, retrying... (attempt ${retryCount + 1}/${MAX_RETRIES_503})`, {
+            delayMs: backoffDelayMs,
+            retryAfter: retryAfterSeconds,
+          });
+        }
+
+        // Wait before retrying
+        await new Promise((resolve) => setTimeout(resolve, backoffDelayMs));
+
+        // Retry the request
+        return this.request<T>(endpoint, options, retryCount + 1);
+      }
+
       let errorMessage = `HTTP ${response.status}`;
       
       // Handle specific status codes
@@ -33,7 +72,7 @@ class ApiClient {
       } else if (response.status === 500) {
         errorMessage = "Internal server error";
       } else if (response.status === 503) {
-        errorMessage = "Service temporarily unavailable";
+        errorMessage = "Service temporarily unavailable. Please try again later.";
       }
 
       // Try to parse error response, but handle non-JSON or empty responses

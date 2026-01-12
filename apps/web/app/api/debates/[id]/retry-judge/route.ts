@@ -8,7 +8,76 @@ const logger = {
   error: (message: string, meta?: any) => {
     console.error(`[ERROR] ${message}`, meta || "");
   },
+  warn: (message: string, meta?: any) => {
+    console.warn(`[WARN] ${message}`, meta || "");
+  },
 };
+
+/**
+ * Maximum retries for 503 service unavailable errors
+ */
+const MAX_RETRIES_503 = 3;
+/**
+ * Base delay in milliseconds for exponential backoff on 503 errors
+ */
+const BASE_RETRY_DELAY_MS = 1000;
+
+/**
+ * Helper function to retry a fetch request on 503 errors
+ */
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit,
+  retryCount: number = 0
+): Promise<Response> {
+  let resp: Response;
+  try {
+    resp = await fetch(url, options);
+  } catch (fetchError) {
+    // Network errors should be retried if we haven't exceeded max retries
+    if (retryCount < MAX_RETRIES_503) {
+      const backoffDelayMs = BASE_RETRY_DELAY_MS * Math.pow(2, retryCount);
+      logger.warn("Network error, retrying...", {
+        attempt: retryCount + 1,
+        maxRetries: MAX_RETRIES_503,
+        delayMs: backoffDelayMs,
+      });
+      await new Promise((resolve) => setTimeout(resolve, backoffDelayMs));
+      return fetchWithRetry(url, options, retryCount + 1);
+    }
+    throw fetchError;
+  }
+
+  // Retry on 503 Service Unavailable
+  if (resp.status === 503 && retryCount < MAX_RETRIES_503) {
+    const retryAfter = resp.headers.get("retry-after");
+    
+    // Calculate exponential backoff delay
+    // Use retry-after header if available, otherwise use exponential backoff
+    const retryAfterSeconds = retryAfter
+      ? parseInt(retryAfter, 10)
+      : null;
+
+    const backoffDelayMs = retryAfterSeconds
+      ? retryAfterSeconds * 1000
+      : BASE_RETRY_DELAY_MS * Math.pow(2, retryCount);
+
+    logger.warn("503 Service Unavailable, retrying...", {
+      attempt: retryCount + 1,
+      maxRetries: MAX_RETRIES_503,
+      delayMs: backoffDelayMs,
+      retryAfter: retryAfterSeconds,
+    });
+
+    // Wait before retrying
+    await new Promise((resolve) => setTimeout(resolve, backoffDelayMs));
+
+    // Retry the request
+    return fetchWithRetry(url, options, retryCount + 1);
+  }
+
+  return resp;
+}
 
 export async function POST(
   req: NextRequest,
@@ -33,12 +102,15 @@ export async function POST(
 
     let resp: Response;
     try {
-      resp = await fetch(`${serverUrl}/debates/${sessionId}/retry-judge`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
+      resp = await fetchWithRetry(
+        `${serverUrl}/debates/${sessionId}/retry-judge`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        }
+      );
     } catch (fetchError) {
-      logger.error("Failed to connect to server", {
+      logger.error("Failed to connect to server after retries", {
         error: fetchError instanceof Error ? fetchError.message : String(fetchError),
         sessionId,
         serverUrl,

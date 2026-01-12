@@ -197,7 +197,7 @@ export class DebateOrchestrator {
           return;
         }
 
-        await this.startJudging(sessionId);
+        await this.coordinateJudgingSession(sessionId);
         return;
       }
 
@@ -570,7 +570,11 @@ export class DebateOrchestrator {
     }
   }
 
-  private async startJudging(sessionId: string): Promise<void> {
+  /**
+   * Coordinate the judging session: update status, prevent duplicates,
+   * and trigger the actual judgment process with error handling
+   */
+  private async coordinateJudgingSession(sessionId: string): Promise<void> {
     if (this.judgingInProgress.has(sessionId)) {
       return;
     }
@@ -590,7 +594,7 @@ export class DebateOrchestrator {
 
       this.judgingInProgress.add(sessionId);
 
-      this.autoJudgeDebate(sessionId)
+      this.performDebateJudgment(sessionId)
         .catch(async (error) => {
           const errorMessage =
             error instanceof Error ? error.message : String(error);
@@ -660,7 +664,11 @@ export class DebateOrchestrator {
     }
   }
 
-  async autoJudgeDebate(sessionId: string): Promise<void> {
+  /**
+   * Perform judgment for a completed debate by calling Gemini API,
+   * validating the response, saving results, and broadcasting updates
+   */
+  async performDebateJudgment(sessionId: string): Promise<void> {
     try {
       const currentSession = await prisma.debateSession.findUnique({
         where: { id: sessionId },
@@ -690,15 +698,15 @@ export class DebateOrchestrator {
 
       const transcript = this.buildTranscript(state);
 
-      logger.info(`Calling LLM judgeDebate for session ${sessionId}`, {
+      logger.info(`Requesting judgment from Gemini for session ${sessionId}`, {
         topic: state.topic,
         transcriptLength: transcript.length,
         turnCount: state.turns.length,
       });
 
-      const judgeResult = await llmService.judgeDebate(state.topic, transcript);
+      const judgeResult = await llmService.requestJudgmentFromGemini(state.topic, transcript);
 
-      logger.info(`LLM judgeDebate completed for session ${sessionId}`, {
+      logger.info(`Gemini judgment completed for session ${sessionId}`, {
         winner: judgeResult.winner,
         tokensIn: judgeResult.tokensIn,
         tokensOut: judgeResult.tokensOut,
@@ -778,7 +786,7 @@ export class DebateOrchestrator {
 
       this.judgingInProgress.add(sessionId);
 
-      this.autoJudgeDebate(sessionId)
+      this.performDebateJudgment(sessionId)
         .catch(async (error) => {
           const errorMessage =
             error instanceof Error ? error.message : String(error);
@@ -847,7 +855,7 @@ export class DebateOrchestrator {
           const totalTurns = debate.rounds * 2;
 
           if (currentTurnCount >= totalTurns) {
-            await this.startJudging(debate.id);
+            await this.coordinateJudgingSession(debate.id);
             continue;
           }
 

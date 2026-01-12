@@ -18,14 +18,14 @@ const MAX_RETRIES = 5;
 const BASE_RETRY_DELAY_MS = 1000;
 
 // LLMResponse interface removed - no longer needed since we removed persona-based debate generation
-// Only judgeDebate() is used, which returns its own specific return type
+// Only requestJudgmentFromGemini() is used, which returns its own specific return type
 
 export class LLMService {
   /**
-   * Execute an API call with rate limiting and exponential backoff on 429 errors
+   * Call Gemini API with rate limiting and exponential backoff retries for 429/503 errors
    * Only records ONE request per logical API call, even if it retries multiple times
    */
-  private async executeWithRateLimit<T>(
+  private async callGeminiWithRetries<T>(
     apiCall: () => Promise<T>,
     retryCount: number = 0,
     requestRecorded: boolean = false
@@ -150,7 +150,7 @@ export class LLMService {
         }
 
         // Retry the request - pass requestRecorded=true so we don't count it again
-        return this.executeWithRateLimit(
+        return this.callGeminiWithRetries(
           apiCall,
           retryCount + 1,
           requestRecorded
@@ -162,7 +162,11 @@ export class LLMService {
     }
   }
 
-  async judgeDebate(
+  /**
+   * Request judgment from Gemini API for a completed debate
+   * Returns the winner, judge JSON, and token usage statistics
+   */
+  async requestJudgmentFromGemini(
     topic: string,
     transcript: string
   ): Promise<{
@@ -190,7 +194,7 @@ export class LLMService {
       try {
         // Race between the API call (with rate limiting) and timeout
         response = await Promise.race([
-          this.executeWithRateLimit(() =>
+          this.callGeminiWithRetries(() =>
             openai.chat.completions.create({
               model: "gemini-2.5-flash",
               messages: [
@@ -204,7 +208,7 @@ export class LLMService {
           timeoutPromise,
         ]);
       } catch (apiError: any) {
-        // Note: 429 errors should be handled by executeWithRateLimit with exponential backoff
+        // Note: 429 errors should be handled by callGeminiWithRetries with exponential backoff
         // If we reach here, it means max retries were exceeded or it's a different error
         const status =
           apiError?.status || apiError?.statusCode || apiError?.code;

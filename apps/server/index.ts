@@ -48,8 +48,10 @@ async function startServer() {
     // Start HTTP API server
     try {
       const { createHttpServer } = await import("./server");
-      httpServer = createHttpServer();
-      httpServer.listen(env.HTTP_PORT);
+      const app = createHttpServer();
+      httpServer = app.listen(env.HTTP_PORT, () => {
+        logger.info(`HTTP API server listening on port ${env.HTTP_PORT}`);
+      });
     } catch (error) {
       logger.error("Failed to start HTTP API server", { error });
       throw error;
@@ -66,8 +68,8 @@ async function startServer() {
 
       await Promise.all([
         wsServer.close(),
-        new Promise((res, rej) =>
-          httpServer?.close((e: any) => (e ? rej(e) : res(null)))
+        new Promise<void>((res, rej) =>
+          httpServer?.close((e: any) => (e ? rej(e) : res()))
         ),
       ]);
 
@@ -79,8 +81,8 @@ async function startServer() {
 
       await Promise.all([
         wsServer.close(),
-        new Promise((res, rej) =>
-          httpServer?.close((e: any) => (e ? rej(e) : res(null)))
+        new Promise<void>((res, rej) =>
+          httpServer?.close((e: any) => (e ? rej(e) : res()))
         ),
       ]);
 

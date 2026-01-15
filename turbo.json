@@ -1,6 +1,18 @@
 {
   "$schema": "https://turborepo.com/schema.json",
   "ui": "tui",
+  "globalEnv": [
+    "NEXTAUTH_SECRET",
+    "NEXTAUTH_URL",
+    "DATABASE_URL",
+    "SERVER_URL",
+    "NEXT_PUBLIC_SERVER_API_URL",
+    "NEXT_PUBLIC_WS_URL",
+    "GOOGLE_CLIENT_ID",
+    "GOOGLE_CLIENT_SECRET",
+    "GITHUB_CLIENT_ID",
+    "GITHUB_CLIENT_SECRET"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build", "@repo/database#db:generate"],

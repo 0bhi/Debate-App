@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
+import { sign } from "jsonwebtoken";
 import { z } from "zod";
 import { logger } from "../../../../../lib/logger";
 import { authOptions } from "../../../../../lib/auth";
+import { env } from "../../../../../lib/env";
 
 const AcceptInvitationSchema = z.object({
   token: z.string().min(1),
@@ -34,12 +36,33 @@ export async function POST(
       process.env.NEXT_PUBLIC_SERVER_API_URL ||
       `http://localhost:3002`;
 
+    // Create JWT token for server authentication
+    if (!env.NEXTAUTH_SECRET) {
+      logger.error("NEXTAUTH_SECRET not configured");
+      return NextResponse.json(
+        { error: "Server configuration error" },
+        { status: 500 }
+      );
+    }
+
+    const jwtToken = sign(
+      {
+        sub: userId,
+        email: session.user.email,
+        name: session.user.name,
+      },
+      env.NEXTAUTH_SECRET,
+      { expiresIn: "1h" }
+    );
+
     const resp = await fetch(`${serverUrl}/debates/${sessionId}/accept-invitation`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${jwtToken}`,
+      },
       body: JSON.stringify({
         token: validatedData.token,
-        userId,
       }),
     });
 

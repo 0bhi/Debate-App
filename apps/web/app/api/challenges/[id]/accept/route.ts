@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
+import { sign } from "jsonwebtoken";
 import { authOptions } from "../../../../../lib/auth";
 import { prisma } from "../../../../../lib/prisma";
 import { env } from "../../../../../lib/env";
@@ -75,6 +76,25 @@ export async function POST(
       process.env.NEXT_PUBLIC_SERVER_API_URL ||
       `http://localhost:3002`;
 
+    // Create JWT token for server authentication
+    if (!env.NEXTAUTH_SECRET) {
+      logger.error("NEXTAUTH_SECRET not configured");
+      return NextResponse.json(
+        { error: "Server configuration error" },
+        { status: 500 }
+      );
+    }
+
+    const token = sign(
+      {
+        sub: userId,
+        email: session.user.email,
+        name: session.user.name,
+      },
+      env.NEXTAUTH_SECRET,
+      { expiresIn: "1h" }
+    );
+
     const debateData = {
       topic: challenge.topic,
       rounds: challenge.rounds,
@@ -84,7 +104,10 @@ export async function POST(
 
     const resp = await fetch(`${serverUrl}/debates`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
       body: JSON.stringify(debateData),
     });
 

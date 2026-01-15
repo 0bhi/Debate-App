@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { sign } from "jsonwebtoken";
 import { logger } from "../../../../../lib/logger";
+import { authOptions } from "../../../../../lib/auth";
+import { env } from "../../../../../lib/env";
 
 /**
  * Maximum retries for 503 service unavailable errors
@@ -80,6 +84,39 @@ export async function POST(
       );
     }
 
+    // Require authentication
+    const session = await getServerSession(authOptions);
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const userId = (session.user as any)?.id;
+    if (!userId) {
+      return NextResponse.json(
+        { error: "User ID not found in session" },
+        { status: 400 }
+      );
+    }
+
+    // Create JWT token for server authentication
+    if (!env.NEXTAUTH_SECRET) {
+      logger.error("NEXTAUTH_SECRET not configured");
+      return NextResponse.json(
+        { error: "Server configuration error" },
+        { status: 500 }
+      );
+    }
+
+    const token = sign(
+      {
+        sub: userId,
+        email: session.user.email,
+        name: session.user.name,
+      },
+      env.NEXTAUTH_SECRET,
+      { expiresIn: "1h" }
+    );
+
     // Proxy to server
     const serverUrl =
       process.env.SERVER_URL ||
@@ -92,7 +129,10 @@ export async function POST(
         `${serverUrl}/debates/${sessionId}/retry-judge`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
         }
       );
     } catch (fetchError) {

@@ -109,7 +109,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(
       {
         error: "Failed to fetch debates",
-        message: error instanceof Error ? error.message : "Internal server error",
+        message:
+          error instanceof Error ? error.message : "Internal server error",
       },
       { status: 500 }
     );

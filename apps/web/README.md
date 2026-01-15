@@ -35,7 +35,7 @@ A platform where two people can debate on a topic and be evaluated by an AI judg
    Vercel (apps/web):
    - NEXTAUTH_SECRET=your-random-secret
    - NEXTAUTH_URL=https://your-vercel-domain.vercel.app
-   - NEXT_PUBLIC_SERVER_API_URL=https://your-server-base-url (e.g. Railway/Render/Fly)
+   - NEXT_PUBLIC_SERVER_API_URL=https://your-server-base-url (e.g. AWS EC2)
    - NEXT_PUBLIC_WS_URL=wss://your-ws-host:port
 
    Server (apps/server):
@@ -173,7 +173,7 @@ For production, replace the Docker services with managed ones:
 1. **Database**: AWS RDS, Supabase, or PlanetScale
 2. **Cache**: AWS ElastiCache, Upstash Redis
 3. **Storage**: AWS S3, Cloudflare R2
-4. **Hosting**: Vercel, Railway, or Fly.io
+4. **Hosting**: Vercel (web), AWS EC2 (server)
 
 ## 📝 License
 

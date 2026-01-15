@@ -195,7 +195,7 @@ For production, replace Docker services with managed cloud services:
 - **Database**: AWS RDS, Supabase, Neon, or PlanetScale
 - **Cache**: AWS ElastiCache, Upstash Redis
 - **Storage**: AWS S3, Cloudflare R2
-- **Hosting**: Vercel (web), Railway/Render/Fly.io (server)
+- **Hosting**: Vercel (web), AWS EC2 (server)
 
 ## 📝 License
 

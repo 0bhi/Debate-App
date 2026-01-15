@@ -1,5 +1,5 @@
 import { WebSocketServer, WebSocket } from "ws";
-import { IncomingMessage } from "http";
+import { IncomingMessage, Server as HttpServer } from "http";
 import { parse as parseUrl } from "url";
 import { redisSub } from "../services/redis";
 import { debateOrchestrator } from "../orchestrator/debateOrchestrator";
@@ -18,10 +18,11 @@ export class DebateWebSocketServer {
   private wss: WebSocketServer;
   private clients = new Map<string, Set<AuthenticatedWebSocket>>();
 
-  constructor(port: number = env.WS_PORT) {
+  constructor(httpServer: HttpServer) {
     try {
+      // Attach WebSocket server to the existing HTTP server
       this.wss = new WebSocketServer({
-        port,
+        server: httpServer,
         verifyClient: verifyClient,
       });
 
@@ -29,9 +30,9 @@ export class DebateWebSocketServer {
       this.setupRedisSubscription();
       this.setupHeartbeat();
 
-      logger.info(`WebSocket server started on port ${port}`);
+      logger.info("WebSocket server attached to HTTP server");
     } catch (error) {
-      logger.error("Failed to create WebSocket server", { error, port });
+      logger.error("Failed to create WebSocket server", { error });
       throw error;
     }
   }
@@ -405,9 +406,13 @@ export class DebateWebSocketServer {
 // Export singleton instance
 let wsServer: DebateWebSocketServer | null = null;
 
-export function getWebSocketServer(): DebateWebSocketServer {
+export function createWebSocketServer(httpServer: HttpServer): DebateWebSocketServer {
   if (!wsServer) {
-    wsServer = new DebateWebSocketServer();
+    wsServer = new DebateWebSocketServer(httpServer);
   }
+  return wsServer;
+}
+
+export function getWebSocketServer(): DebateWebSocketServer | null {
   return wsServer;
 }

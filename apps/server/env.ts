@@ -57,18 +57,19 @@ const envSchema = z.object({
     .transform((val: string) => parseInt(val, 10))
     .default("60"), // 1 minute window
 
-  // WebSocket
-  WS_PORT: z
-    .string()
-    .transform((val: string) => parseInt(val, 10))
-    .default("3001"),
-  WS_PUBLIC_URL: z.string().url().optional(),
-
-  // HTTP API
+  // Server port (HTTP + WebSocket on same port)
   HTTP_PORT: z
     .string()
     .transform((val: string) => parseInt(val, 10))
-    .default("3002"),
+    .default("8080"),
+
+  // Legacy: WS_PORT is no longer used (WebSocket now shares HTTP_PORT)
+  // Kept for backwards compatibility during migration
+  WS_PORT: z
+    .string()
+    .transform((val: string) => parseInt(val, 10))
+    .optional(),
+  WS_PUBLIC_URL: z.string().url().optional(),
 
   // Environment
   NODE_ENV: z

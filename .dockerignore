@@ -1,0 +1,40 @@
+# Dependencies (will be installed fresh)
+**/node_modules
+
+# Git
+.git
+.gitignore
+
+# Environment files
+.env
+.env.*
+**/.env
+**/.env.*
+
+# Build outputs
+**/dist
+**/.turbo
+**/.next
+
+# Documentation
+*.md
+!packages/*/README.md
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test files
+**/*.test.ts
+**/*.spec.ts
+**/coverage
+
+# Web app (not needed for server)
+apps/web
+

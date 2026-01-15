@@ -1,0 +1,61 @@
+# Build stage
+FROM node:20-alpine AS builder
+
+# Install pnpm
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+WORKDIR /app
+
+# Copy workspace config files first (for better layer caching)
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json turbo.json ./
+
+# Copy package.json files for all workspaces
+COPY packages/database/package.json ./packages/database/
+COPY packages/types/package.json ./packages/types/
+COPY apps/server/package.json ./apps/server/
+
+# Install dependencies
+RUN pnpm install --frozen-lockfile
+
+# Copy source files
+COPY packages/database ./packages/database
+COPY packages/types ./packages/types
+COPY apps/server ./apps/server
+
+# Generate Prisma client
+RUN cd packages/database && pnpm exec prisma generate
+
+# Build packages and server
+RUN pnpm --filter @repo/types build || true
+RUN pnpm --filter @repo/server build || true
+
+# Production stage
+FROM node:20-alpine AS runner
+
+# Install pnpm
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+WORKDIR /app
+
+# Copy workspace files
+COPY --from=builder /app/pnpm-lock.yaml /app/pnpm-workspace.yaml /app/package.json /app/turbo.json ./
+
+# Copy packages
+COPY --from=builder /app/packages ./packages
+COPY --from=builder /app/apps/server ./apps/server
+
+# Copy node_modules
+COPY --from=builder /app/node_modules ./node_modules
+
+WORKDIR /app/apps/server
+
+# Expose port (Railway sets PORT automatically)
+EXPOSE 8080
+
+# Set environment
+ENV NODE_ENV=production
+
+# Start the server
+# Railway sets PORT env var, we map it to HTTP_PORT
+CMD ["sh", "-c", "HTTP_PORT=${PORT:-8080} pnpm start"]
+

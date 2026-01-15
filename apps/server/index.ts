@@ -8,7 +8,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 config({ path: resolve(__dirname, ".env") });
 
-import { getWebSocketServer } from "./ws";
+import { createWebSocketServer, getWebSocketServer } from "./ws";
 import { logger } from "./utils/logger";
 import { env } from "./env";
 
@@ -37,15 +37,7 @@ async function startServer() {
       logger.warn("Failed to recover pending turns, continuing", { error });
     }
 
-    // Start WebSocket server
-    try {
-      wsServer = getWebSocketServer();
-    } catch (error) {
-      logger.error("Failed to start WebSocket server", { error });
-      throw error;
-    }
-
-    // Start HTTP API server
+    // Start HTTP API server first
     try {
       const { createHttpServer } = await import("./server");
       const app = createHttpServer();
@@ -57,9 +49,17 @@ async function startServer() {
       throw error;
     }
 
+    // Attach WebSocket server to the HTTP server (same port)
+    try {
+      wsServer = createWebSocketServer(httpServer);
+    } catch (error) {
+      logger.error("Failed to start WebSocket server", { error });
+      throw error;
+    }
+
     logger.info("Server running", {
-      wsPort: env.WS_PORT,
-      httpPort: env.HTTP_PORT,
+      port: env.HTTP_PORT,
+      mode: "HTTP + WebSocket on same port",
     });
 
     // Graceful shutdown

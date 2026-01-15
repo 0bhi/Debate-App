@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { z } from "zod";
+import { sign } from "jsonwebtoken";
 import { logger } from "../../../lib/logger";
 import { CreateDebateSchema } from "@repo/types";
 import { authOptions } from "../../../lib/auth";
@@ -117,13 +118,28 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    // Handle auth errors gracefully
+    // Require authentication for creating debates
     let session = null;
     try {
       session = await getServerSession(authOptions);
     } catch (authError) {
-      logger.warn("Auth error (continuing without session)", { authError });
-      // Continue without session - debates can be created anonymously
+      logger.error("Auth error", { authError });
+      return NextResponse.json(
+        { error: "Authentication error" },
+        { status: 401 }
+      );
+    }
+
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const userId = (session.user as any)?.id;
+    if (!userId) {
+      return NextResponse.json(
+        { error: "User ID not found in session" },
+        { status: 400 }
+      );
     }
 
     const body = await req.json();
@@ -136,28 +152,55 @@ export async function POST(req: NextRequest) {
       process.env.SERVER_URL ||
       process.env.NEXT_PUBLIC_SERVER_API_URL ||
       `http://localhost:3002`;
-    const userId = (session?.user as any)?.id;
 
-    // If user is logged in, assign them as debater A
+    // Assign logged-in user as debater A
     const requestData = {
       ...validatedData,
-      debaterAId: userId || validatedData.debaterAId,
+      debaterAId: userId,
     };
+
+    // Create JWT token for server authentication (same secret as server uses)
+    if (!env.NEXTAUTH_SECRET) {
+      logger.error("NEXTAUTH_SECRET not configured");
+      return NextResponse.json(
+        { error: "Server configuration error" },
+        { status: 500 }
+      );
+    }
+
+    const token = sign(
+      {
+        sub: userId,
+        email: session.user.email,
+        name: session.user.name,
+      },
+      env.NEXTAUTH_SECRET,
+      { expiresIn: "1h" }
+    );
 
     const resp = await fetch(`${serverUrl}/debates`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
       body: JSON.stringify(requestData),
     });
+
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({}));
+      logger.error("Server responded with error", {
+        status: resp.status,
+        error: err,
+      });
       throw new Error(err.error || `Server error ${resp.status}`);
     }
+
     const result = await resp.json();
 
     logger.info("Debate created via API", {
       sessionId: result.id,
-      userId: (session?.user as any)?.id,
+      userId,
       topic: validatedData.topic,
     });
 

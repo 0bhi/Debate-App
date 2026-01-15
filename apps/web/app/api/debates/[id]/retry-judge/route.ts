@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { logger } from "../../../../lib/logger";
+import { logger } from "../../../../../lib/logger";
 
 /**
  * Maximum retries for 503 service unavailable errors
@@ -39,12 +39,10 @@ async function fetchWithRetry(
   // Retry on 503 Service Unavailable
   if (resp.status === 503 && retryCount < MAX_RETRIES_503) {
     const retryAfter = resp.headers.get("retry-after");
-    
+
     // Calculate exponential backoff delay
     // Use retry-after header if available, otherwise use exponential backoff
-    const retryAfterSeconds = retryAfter
-      ? parseInt(retryAfter, 10)
-      : null;
+    const retryAfterSeconds = retryAfter ? parseInt(retryAfter, 10) : null;
 
     const backoffDelayMs = retryAfterSeconds
       ? retryAfterSeconds * 1000
@@ -99,13 +97,15 @@ export async function POST(
       );
     } catch (fetchError) {
       logger.error("Failed to connect to server after retries", {
-        error: fetchError instanceof Error ? fetchError.message : String(fetchError),
+        error:
+          fetchError instanceof Error ? fetchError.message : String(fetchError),
         sessionId,
         serverUrl,
       });
       return NextResponse.json(
         {
-          error: "Failed to connect to debate server. Please ensure the server is running.",
+          error:
+            "Failed to connect to debate server. Please ensure the server is running.",
         },
         { status: 503 }
       );
@@ -140,10 +140,7 @@ export async function POST(
       const contentType = resp.headers.get("content-type");
       const contentLength = resp.headers.get("content-length");
 
-      if (
-        contentType?.includes("application/json") &&
-        contentLength !== "0"
-      ) {
+      if (contentType?.includes("application/json") && contentLength !== "0") {
         try {
           const text = await resp.text();
           if (text && text.trim()) {
@@ -188,4 +185,3 @@ export async function POST(
     );
   }
 }
-

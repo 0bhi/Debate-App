@@ -28,6 +28,15 @@ export async function GET(req: NextRequest) {
       );
     }
 
+    // Ensure NEXTAUTH_SECRET is available (required for JWT signing)
+    if (!env.NEXTAUTH_SECRET) {
+      logger.error("NEXTAUTH_SECRET is not configured");
+      return NextResponse.json(
+        { error: "Server configuration error" },
+        { status: 500 }
+      );
+    }
+
     // Create a JWT token for WebSocket authentication
     // This token is signed with the same secret as NextAuth, so the server can verify it
     // Token expires in 1 hour (sufficient for WebSocket connections)

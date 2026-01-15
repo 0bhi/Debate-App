@@ -20,11 +20,9 @@ export async function GET(req: NextRequest) {
     const searchParams = req.nextUrl.searchParams;
     const type = searchParams.get("type") || "received"; // "sent" or "received"
 
-    let friendRequests;
-
     if (type === "sent") {
       // Get sent friend requests
-      friendRequests = await prisma.friendRequest.findMany({
+      const friendRequests = await prisma.friendRequest.findMany({
         where: {
           senderId: userId,
           status: "PENDING",
@@ -43,9 +41,19 @@ export async function GET(req: NextRequest) {
           createdAt: "desc",
         },
       });
+
+      const formattedRequests = friendRequests.map((fr) => ({
+        id: fr.id,
+        status: fr.status,
+        createdAt: fr.createdAt,
+        updatedAt: fr.updatedAt,
+        user: fr.receiver,
+      }));
+
+      return NextResponse.json(formattedRequests);
     } else {
       // Get received friend requests (default)
-      friendRequests = await prisma.friendRequest.findMany({
+      const friendRequests = await prisma.friendRequest.findMany({
         where: {
           receiverId: userId,
           status: "PENDING",
@@ -64,17 +72,17 @@ export async function GET(req: NextRequest) {
           createdAt: "desc",
         },
       });
+
+      const formattedRequests = friendRequests.map((fr) => ({
+        id: fr.id,
+        status: fr.status,
+        createdAt: fr.createdAt,
+        updatedAt: fr.updatedAt,
+        user: fr.sender,
+      }));
+
+      return NextResponse.json(formattedRequests);
     }
-
-    const formattedRequests = friendRequests.map((fr) => ({
-      id: fr.id,
-      status: fr.status,
-      createdAt: fr.createdAt,
-      updatedAt: fr.updatedAt,
-      user: type === "sent" ? fr.receiver : fr.sender,
-    }));
-
-    return NextResponse.json(formattedRequests);
   } catch (error) {
     logger.error("Failed to fetch friend requests", { error });
     return NextResponse.json(

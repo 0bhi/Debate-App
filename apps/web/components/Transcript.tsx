@@ -37,8 +37,6 @@ export function Transcript({ sessionState, currentTurn }: TranscriptProps) {
     }).format(dateObj);
   };
 
-  const MotionDiv = motion.div;
-
   return (
     <div className="flex flex-col h-full bg-card/80 backdrop-blur-sm border border-border rounded-2xl shadow-lg overflow-hidden">
       {/* Header */}
@@ -62,17 +60,15 @@ export function Transcript({ sessionState, currentTurn }: TranscriptProps) {
             const isEven = index % 2 === 0;
 
             return (
-              <div
+              <motion.div
                 key={turn.id}
-                className={`flex gap-4 ${isEven ? "flex-row" : "flex-row-reverse"}`}
+                initial={{ opacity: 0, y: 20, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -20, scale: 0.95 }}
+                transition={{ duration: 0.3, ease: "easeOut" }}
+                style={{ width: "100%" }}
               >
-                <MotionDiv
-                  initial={{ opacity: 0, y: 20, scale: 0.95 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: -20, scale: 0.95 }}
-                  transition={{ duration: 0.3, ease: "easeOut" }}
-                  className="w-full"
-                >
+                <div className={`flex gap-4 ${isEven ? "flex-row" : "flex-row-reverse"}`}>
                   <div className={`flex gap-4 w-full ${isEven ? "flex-row" : "flex-row-reverse"}`}>
                     <div className="flex-shrink-0">
                       <Avatar name={debaterName} size="sm" isActive={false} />
@@ -120,8 +116,8 @@ export function Transcript({ sessionState, currentTurn }: TranscriptProps) {
                       </div>
                     </div>
                   </div>
-                </MotionDiv>
-              </div>
+                </div>
+              </motion.div>
             );
           })}
 

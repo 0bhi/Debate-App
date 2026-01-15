@@ -96,7 +96,7 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { error: error.errors[0].message },
+        { error: error.errors[0]?.message || "Validation error" },
         { status: 400 }
       );
     }
@@ -125,11 +125,9 @@ export async function GET(req: NextRequest) {
     const searchParams = req.nextUrl.searchParams;
     const type = searchParams.get("type") || "received"; // "sent" or "received"
 
-    let challenges;
-
     if (type === "sent") {
       // Get challenges sent by user
-      challenges = await prisma.debateChallenge.findMany({
+      const challenges = await prisma.debateChallenge.findMany({
         where: {
           challengerId: userId,
           status: "PENDING",
@@ -148,9 +146,22 @@ export async function GET(req: NextRequest) {
           createdAt: "desc",
         },
       });
+
+      const formattedChallenges = challenges.map((challenge) => ({
+        id: challenge.id,
+        topic: challenge.topic,
+        rounds: challenge.rounds,
+        status: challenge.status,
+        debateId: challenge.debateId,
+        createdAt: challenge.createdAt,
+        updatedAt: challenge.updatedAt,
+        user: challenge.challenged,
+      }));
+
+      return NextResponse.json(formattedChallenges);
     } else {
       // Get challenges received by user (default)
-      challenges = await prisma.debateChallenge.findMany({
+      const challenges = await prisma.debateChallenge.findMany({
         where: {
           challengedId: userId,
           status: "PENDING",
@@ -169,20 +180,20 @@ export async function GET(req: NextRequest) {
           createdAt: "desc",
         },
       });
+
+      const formattedChallenges = challenges.map((challenge) => ({
+        id: challenge.id,
+        topic: challenge.topic,
+        rounds: challenge.rounds,
+        status: challenge.status,
+        debateId: challenge.debateId,
+        createdAt: challenge.createdAt,
+        updatedAt: challenge.updatedAt,
+        user: challenge.challenger,
+      }));
+
+      return NextResponse.json(formattedChallenges);
     }
-
-    const formattedChallenges = challenges.map((challenge) => ({
-      id: challenge.id,
-      topic: challenge.topic,
-      rounds: challenge.rounds,
-      status: challenge.status,
-      debateId: challenge.debateId,
-      createdAt: challenge.createdAt,
-      updatedAt: challenge.updatedAt,
-      user: type === "sent" ? challenge.challenged : challenge.challenger,
-    }));
-
-    return NextResponse.json(formattedChallenges);
   } catch (error) {
     logger.error("Failed to fetch challenges", { error });
     return NextResponse.json(
